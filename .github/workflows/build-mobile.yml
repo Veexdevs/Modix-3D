@@ -1,0 +1,182 @@
+name: Build Modix 3D Mobile (APK & IPA)
+
+on:
+  push:
+    branches:
+      - main
+      - 'arena/**'
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create/Update GitHub Release v1.0.0 with .apk and .ipa'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Build Android (.apk)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Dependencies & Build Modix 3D Bundle
+        run: |
+          npm ci
+          npm run build
+          npx cap sync android
+
+      - name: Prepare Release Signing Keystore
+        working-directory: android/app
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 --decode > modix-release.keystore
+          else
+            keytool -genkeypair -v \
+              -keystore modix-release.keystore \
+              -alias modix3d \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass modix3dpass \
+              -keypass modix3dpass \
+              -dname "CN=Modix 3D, OU=Mobile, O=Modix, L=Sao Paulo, ST=SP, C=BR"
+          fi
+
+      - name: Assemble Signed Android APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Stage Modix-3D.apk
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk Modix-3D.apk
+          ls -lh Modix-3D.apk
+
+      - name: Upload Android APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modix-3D-APK
+          path: Modix-3D.apk
+          if-no-files-found: error
+          retention-days: 90
+
+  build-ios:
+    name: Build iOS (.ipa)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Dependencies & Sync iOS
+        run: |
+          npm ci
+          npm run build
+          npx cap sync ios
+
+      - name: Build iOS App Bundle (Release iphoneos)
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath ios/build \
+            -destination 'generic/platform=iOS' \
+            -resolvePackageDependencies
+
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath ios/build \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            build
+
+      - name: Ad-Hoc Sign & Package Modix-3D.ipa
+        run: |
+          APP_PATH=$(find ios/build/Build/Products -name "App.app" -type d | head -n 1)
+          echo "Found built iOS app at: $APP_PATH"
+          mkdir -p ios/ipa_stage/Payload
+          cp -R "$APP_PATH" ios/ipa_stage/Payload/App.app
+          codesign --force --deep --sign - ios/ipa_stage/Payload/App.app
+          cd ios/ipa_stage
+          ditto -c -k --sequesterRsrc --keepParent Payload ../../Modix-3D.ipa
+          cd ../..
+          ls -lh Modix-3D.ipa
+
+      - name: Upload iOS IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modix-3D-IPA
+          path: Modix-3D.ipa
+          if-no-files-found: error
+          retention-days: 90
+
+  publish-release:
+    name: Publish GitHub Release (.apk & .ipa)
+    needs: [build-android, build-ios]
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release == true)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Android APK
+        uses: actions/download-artifact@v4
+        with:
+          name: Modix-3D-APK
+
+      - name: Download iOS IPA
+        uses: actions/download-artifact@v4
+        with:
+          name: Modix-3D-IPA
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }}
+          name: "Modix 3D ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.0.0' }} (Android .apk & iOS .ipa)"
+          body: |
+            ## Modix 3D — Mobile 3D Modeling Studio (Landscape Edition)
+            - **Modix-3D.apk**: Pacote Android assinado (V1+V2), pronto para instalar diretamente em qualquer celular ou tablet Android em tela deitada (Landscape).
+            - **Modix-3D.ipa**: Pacote iOS compilado para `arm64` (`iphoneos`), pronto para instalação via AltStore / SideStore / Sideloadly / TrollStore / Xcode.
+          files: |
+            Modix-3D.apk
+            Modix-3D.ipa

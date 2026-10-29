@@ -1,0 +1,126 @@
+export const Icons = {
+  chevronDown: `<svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5L6 7.5L9 4.5"/></svg>`,
+  chevronRight: `<svg viewBox="0 0 12 12" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 3L7.5 6L4.5 9"/></svg>`,
+  plus: `<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M7 2.5v9M2.5 7h9"/></svg>`,
+
+  // Topbar right
+  scene: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="5.5" cy="10.5" r="2.8" fill="currentColor" fill-opacity="0.25"/><path d="M9.5 3.5l3.5 7h-7z"/><circle cx="4" cy="4.5" r="1.2" fill="currentColor"/></svg>`,
+  viewLayer: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><rect x="2.5" y="2.5" width="8.5" height="8.5" rx="1.2"/><path d="M5.5 13.5h7a1 1 0 0 0 1-1v-7"/></svg>`,
+
+  // Editor type icons
+  editor3d: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M1.5 11.5L5 6.5h6l3.5 5H1.5z"/><path d="M8 6.5v5M3.2 9h9.6"/><circle cx="8" cy="4.2" r="1.8" fill="currentColor"/></svg>`,
+  editorOutliner: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2" width="3.5" height="3" rx="0.5" fill="currentColor"/><path d="M3.8 5v8.5M3.8 9h3.2M3.8 13h3.2"/><rect x="7" y="7.5" width="6.5" height="2.6" rx="0.5"/><rect x="7" y="11.7" width="6.5" height="2.6" rx="0.5"/></svg>`,
+  editorProperties: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/><circle cx="6" cy="4" r="1.6" fill="#1a1a1a" stroke="currentColor"/><circle cx="10.5" cy="8" r="1.6" fill="#1a1a1a" stroke="currentColor"/><circle cx="5" cy="12" r="1.6" fill="#1a1a1a" stroke="currentColor"/></svg>`,
+  editorTimeline: `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.8"/><path d="M8 4.8V8l2.5 1.6" stroke-linecap="round"/></svg>`,
+
+  // Modes
+  modeObject: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2.2l5 2.8v6L8 13.8 3 11V5z" fill="currentColor" fill-opacity="0.22"/><path d="M3 5l5 2.8L13 5M8 7.8v6"/></svg>`,
+  modeEdit: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M3.5 12.5L8 3.5l4.5 9z"/><circle cx="8" cy="3.5" r="1.5" fill="#ff9426" stroke="none"/><circle cx="3.5" cy="12.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="12.5" cy="12.5" r="1.5" fill="currentColor" stroke="none"/></svg>`,
+  modeSculpt: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="7.5" cy="8.5" r="4.8" fill="currentColor" fill-opacity="0.2"/><path d="M9.5 2.5l4 4-4.5 4.5-2.5.5.5-2.5z" fill="currentColor"/></svg>`,
+  modePaint: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M10.8 2.5l2.7 2.7-5.5 5.5-2.7-2.7z"/><path d="M5.3 8c-1.8.4-2.5 1.8-2.8 3.8 2-.3 3.4-1 3.8-2.8" fill="currentColor"/></svg>`,
+
+  editVertex: `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M4 12L8 4l4 8z" stroke-opacity="0.5"/><circle cx="8" cy="4" r="2" fill="#fff" stroke="none"/><circle cx="4" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>`,
+  editEdge: `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M4 12h8L8 4" stroke-opacity="0.45"/><path d="M4 12L8 4" stroke="#fff" stroke-width="2.2"/></svg>`,
+  editFace: `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M3.5 12L8 3.5 12.5 12z" fill="#fff" fill-opacity="0.75"/></svg>`,
+
+  // Header mid widgets
+  orientationGlobal: `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M5 11V3.5M5 11h7.5M5 11L2.2 13.8"/><path d="M3.5 5L5 3.2 6.5 5M11 9.5l1.8 1.5-1.8 1.5"/></svg>`,
+  pivotMedian: `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="2.2" fill="currentColor"/><circle cx="4" cy="12" r="1.5"/><circle cx="12" cy="4" r="1.5"/><path d="M5.2 10.8l5.6-5.6" stroke-dasharray="1.5 1.5"/></svg>`,
+  snapMagnet: `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 3.5v4.5a4 4 0 0 0 8 0V3.5"/><path d="M3 5.5h2.2M10.8 5.5H13"/></svg>`,
+  snapIncrement: `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2.5 5.5h11M2.5 10.5h11M5.5 2.5v11M10.5 2.5v11"/></svg>`,
+  proportionalCircle: `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5"/><circle cx="8" cy="8" r="1.8" fill="currentColor"/></svg>`,
+  proportionalSmooth: `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 12.5c3 0 3.5-8.5 6-8.5s3 8.5 6 8.5"/></svg>`,
+
+  // Header right widgets
+  gizmoToggle: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M4 12V4m0 8h8"/><path d="M4 8a4 4 0 0 1 4 4"/><circle cx="4" cy="4" r="1.2" fill="currentColor"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>`,
+  overlaysToggle: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6.5" cy="9.5" r="4" fill="currentColor"/><circle cx="9.8" cy="6.2" r="4"/></svg>`,
+  xrayToggle: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2.5" y="5.5" width="7.5" height="7.5" rx="1"/><rect x="6" y="2.5" width="7.5" height="7.5" rx="1" stroke-dasharray="2 1.4"/></svg>`,
+
+  shadingWireframe: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.15"><circle cx="8" cy="8" r="5.6"/><ellipse cx="8" cy="8" rx="2.6" ry="5.6"/><path d="M2.5 8h11"/></svg>`,
+  shadingSolid: `<svg viewBox="0 0 16 16" width="14" height="14"><defs><radialGradient id="solG" cx="35%" cy="30%" r="68%"><stop offset="0%" stop-color="#ffffff"/><stop offset="65%" stop-color="#b5b5b5"/><stop offset="100%" stop-color="#666666"/></radialGradient></defs><circle cx="8" cy="8" r="5.7" fill="url(#solG)"/></svg>`,
+  shadingMaterial: `<svg viewBox="0 0 16 16" width="14" height="14"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M8 2.4A5.6 5.6 0 0 1 13.6 8H8V2.4z" fill="currentColor"/><path d="M2.4 8A5.6 5.6 0 0 0 8 13.6V8H2.4z" fill="currentColor"/><path d="M8 2.4A5.6 5.6 0 0 0 2.4 8H8V2.4z" fill="currentColor" fill-opacity="0.28"/></svg>`,
+  shadingRendered: `<svg viewBox="0 0 16 16" width="14" height="14"><circle cx="8" cy="8" r="5.6" fill="currentColor" fill-opacity="0.22" stroke="currentColor" stroke-width="1.2"/><path d="M5.5 3.3A5.2 5.2 0 0 0 12.7 10.5 5.5 5.5 0 1 1 5.5 3.3z" fill="currentColor"/></svg>`,
+
+  // Left floating toolbar (exact 9 tools from screenshot)
+  toolSelectBox: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="3" width="11.5" height="11.5" rx="1" stroke-dasharray="2.5 2"/><path d="M11 10.5l6 2.5-2.6 1.1L16 17l-1.3.7-1.6-2.9-2.1 2z" fill="#fff" stroke="none"/></svg>`,
+  toolCursor: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none"><circle cx="10" cy="10" r="5.6" stroke="#ffffff" stroke-width="1.5"/><circle cx="10" cy="10" r="5.6" stroke="#e14343" stroke-width="1.5" stroke-dasharray="3 3"/><path d="M10 1.8v4.2M10 14v4.2M1.8 10h4.2M14 10h4.2" stroke="#d8d8d8" stroke-width="1.3" stroke-linecap="round"/></svg>`,
+  toolMove: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2.5v15M2.5 10h15"/><path d="M7.8 4.8L10 2.4l2.2 2.4M7.8 15.2L10 17.6l2.2-2.4M4.8 7.8L2.4 10l2.4 2.2M15.2 7.8L17.6 10l-2.4 2.2"/></svg>`,
+  toolRotate: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="10" cy="10" r="6.2"/><path d="M10 1.8v2.5M10 15.7v2.5M1.8 10h2.5M15.7 10h2.5"/><circle cx="10" cy="10" r="1.6" fill="currentColor" stroke="none"/></svg>`,
+  toolScale: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><rect x="3.2" y="3.2" width="13.6" height="13.6" rx="1"/><rect x="3.2" y="9.8" width="7" height="7" fill="currentColor" fill-opacity="0.85"/><path d="M11.2 8.8l4.2-4.2M12.2 4.6h3.2v3.2" stroke-linecap="round"/></svg>`,
+  toolTransform: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="4" y="9.5" width="6.5" height="6.5" fill="currentColor" fill-opacity="0.85"/><path d="M7.2 9.5V3.2M5.2 5.2l2-2.2 2 2.2"/><path d="M10.5 12.8h6.3M14.8 10.8l2.2 2-2.2 2"/><path d="M11 4.8a5.5 5.5 0 0 1 4.2 4.2"/></svg>`,
+  toolAnnotate: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12.8 3.2l3.2 3.2-7.8 7.8-4 .8.8-4z" fill="currentColor" fill-opacity="0.25"/><path d="M3.5 17c2.8-.6 4.8.5 7.5-.5s3.5-1.2 5.5-.5"/></svg>`,
+  toolMeasure: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3.2v13.6h12.8"/><path d="M4 3.2l11.5 13.6" stroke="#7dd8a6"/><path d="M4 10.5a6.3 6.3 0 0 1 4.8 2.4"/></svg>`,
+  toolAddCube: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M10 3l6 3.2v6.6L10 16l-6-3.2V6.2z" stroke="#8fd8b5"/><path d="M4 6.2L10 9.4l6-3.2M10 9.4V16" stroke="#8fd8b5"/><path d="M2.5 15.5l3-1.8M17.5 15.5l-3-1.8" stroke-opacity="0.5"/></svg>`,
+
+  // Extra Edit Mode / Sculpt Mode tools
+  toolExtrude: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M4 13l6 3.2 6-3.2-6-3z" stroke-opacity="0.5"/><path d="M6 8.5V4.5l4-2 4 2v4" stroke="#ffb347"/><path d="M10 10V2.5M7.8 4.8L10 2.5l2.2 2.3" stroke="#ffb347" stroke-linecap="round"/></svg>`,
+  toolInset: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="3" width="14" height="14" rx="1"/><rect x="7" y="7" width="6" height="6" fill="#ffb347" fill-opacity="0.35" stroke="#ffb347"/><path d="M3 3l4 4M17 3l-4 4M3 17l4-4M17 17l-4-4" stroke-opacity="0.6"/></svg>`,
+  toolBevel: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M3.5 16.5V7.5l4-4h9v13z"/><path d="M3.5 7.5h4v-4" stroke="#ffb347" stroke-width="1.6"/></svg>`,
+  toolLoopCut: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3.5" y="4" width="13" height="12" rx="1"/><path d="M10 2.5v15" stroke="#ffe066" stroke-width="1.8"/></svg>`,
+  toolSculptDraw: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="#85c1ff" stroke-width="1.5" stroke-linecap="round"><path d="M3 15c3 0 4-6 7-6s4 6 7 6"/><circle cx="10" cy="6" r="2.2" fill="#85c1ff" fill-opacity="0.3"/></svg>`,
+  toolSculptInflate: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="#85c1ff" stroke-width="1.5"><circle cx="10" cy="11" r="5.5" fill="#85c1ff" fill-opacity="0.2"/><path d="M10 2.5v3M4 5l2 2M16 5l-2 2" stroke-linecap="round"/></svg>`,
+  toolSculptSmooth: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="#ff9f80" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 13.5c4-4 11-4 15 0"/><path d="M4 9.5h12" stroke-dasharray="2 2"/></svg>`,
+  toolSculptGrab: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="#ffe082" stroke-width="1.5" stroke-linecap="round"><path d="M4 15c2-1 4-8 8-8 2 0 3 4 4 8"/><path d="M10 4l3-1.5L12 6"/></svg>`,
+  toolSculptFlatten: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="#ff9f80" stroke-width="1.5" stroke-linecap="round"><path d="M3 8h14"/><path d="M4 15l3-7h6l3 7"/></svg>`,
+  toolSculptPinch: `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="#ffe082" stroke-width="1.5" stroke-linecap="round"><path d="M3 15c4 0 6-3 7-8 1 5 3 8 7 8"/><path d="M4 6h3.5M16 6h-3.5"/></svg>`,
+
+  // Right viewport circle buttons
+  navZoom: `<svg viewBox="0 0 18 18" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="4.8" fill="currentColor" fill-opacity="0.18"/><path d="M11.6 11.6L15.2 15.2M8 6v4M6 8h4"/></svg>`,
+  navPan: `<svg viewBox="0 0 18 18" width="15" height="15" fill="currentColor"><path d="M8.2 2.2a.9.9 0 0 1 1.8 0v4.6h.6V3a.9.9 0 0 1 1.8 0v4.2h.6V4.3a.85.85 0 0 1 1.7 0v6.2c0 3.1-2.2 5.3-5.2 5.3-2.4 0-4.2-1.3-5.2-3.4l-1.3-2.6a.95.95 0 0 1 1.6-.9l1.1 1.7V3.3a.9.9 0 0 1 1.8 0v3.5h.7V2.2z"/></svg>`,
+  navCamera: `<svg viewBox="0 0 18 18" width="15" height="15" fill="currentColor"><rect x="2.2" y="5" width="9.8" height="8" rx="1.4"/><path d="M12.4 7.5l3.4-2v7l-3.4-2z"/><circle cx="5.2" cy="3.8" r="1.5"/><circle cx="9.2" cy="3.8" r="1.5"/></svg>`,
+  navProjection: `<svg viewBox="0 0 18 18" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M4.5 3.5h9l2.3 11H2.2L4.5 3.5z"/><path d="M9 3.5v11M6.6 3.5l-1.2 11M11.4 3.5l1.2 11M3.6 7h10.8M2.9 10.7h12.2"/></svg>`,
+
+  // Outliner icons
+  searchGlass: `<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="6" cy="6" r="4"/><path d="M9.2 9.2L12.3 12.3"/></svg>`,
+  filterFunnel: `<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M1.8 2.5h10.4L8.2 7.2v4.3l-2.4-1.2V7.2z"/></svg>`,
+  collectionRoot: `<svg viewBox="0 0 14 14" width="13" height="13" fill="currentColor"><rect x="1.5" y="2" width="11" height="10" rx="1.4" fill-opacity="0.88"/><path d="M3.5 5h3v2h-3zM7.5 5h3v2h-3z" fill="#111"/></svg>`,
+  collectionBox: `<svg viewBox="0 0 14 14" width="13" height="13" fill="currentColor"><path d="M2 3.2A1.2 1.2 0 0 1 3.2 2h7.6A1.2 1.2 0 0 1 12 3.2v7.6a1.2 1.2 0 0 1-1.2 1.2H3.2A1.2 1.2 0 0 1 2 10.8z"/><path d="M4.5 5.5h5v1.5h-5z" fill="#111"/></svg>`,
+
+  outlinerObjOrange: `<svg viewBox="0 0 14 14" width="13" height="13" fill="none"><path d="M2.8 3.5h8.4L7 11.2z" stroke="#eb8b34" stroke-width="1.3" fill="#eb8b34" fill-opacity="0.2"/><circle cx="2.8" cy="3.5" r="1.3" fill="#eb8b34"/><circle cx="11.2" cy="3.5" r="1.3" fill="#eb8b34"/><circle cx="7" cy="11.2" r="1.3" fill="#eb8b34"/></svg>`,
+  outlinerCamOrange: `<svg viewBox="0 0 14 14" width="13" height="13" fill="#eb8b34"><rect x="1.8" y="4.2" width="7.2" height="5.8" rx="1"/><path d="M9.4 6l3-1.7v5.4l-3-1.7z"/></svg>`,
+  outlinerLightOrange: `<svg viewBox="0 0 14 14" width="13" height="13" fill="none" stroke="#eb8b34" stroke-width="1.3"><circle cx="7" cy="6" r="3.2" fill="#eb8b34" fill-opacity="0.28"/><path d="M5.6 10.8h2.8M6.1 12.4h1.8" stroke-linecap="round"/></svg>`,
+  outlinerEmptyOrange: `<svg viewBox="0 0 14 14" width="13" height="13" fill="none" stroke="#eb8b34" stroke-width="1.4" stroke-linecap="round"><path d="M7 2v10M2 7h10"/></svg>`,
+
+  dataMeshBadge: `<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="#48a8d8" stroke-width="1.2"><path d="M3 4h8L7 11.2z"/></svg>`,
+  dataCamBadge: `<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="#68b684" stroke-width="1.2"><rect x="2.2" y="3.5" width="9.6" height="7" rx="1.2"/><circle cx="7" cy="7" r="1.8"/></svg>`,
+  dataLightBadge: `<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="#68b684" stroke-width="1.2"><circle cx="7" cy="7" r="4"/><path d="M7 4.8v4.4M4.8 7h4.4"/></svg>`,
+
+  eyeOpen: `<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.3 7c1.4-2.8 3.5-4 5.7-4s4.3 1.2 5.7 4c-1.4 2.8-3.5 4-5.7 4S2.7 9.8 1.3 7z"/><circle cx="7" cy="7" r="1.7" fill="currentColor"/></svg>`,
+  eyeClosed: `<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M2 5.5c1.4 2.2 3.2 3.2 5 3.2s3.6-1 5-3.2M2.5 11.5l9-9"/></svg>`,
+  checkboxChecked: `<svg viewBox="0 0 14 14" width="12" height="12" fill="currentColor"><rect x="2" y="2" width="10" height="10" rx="1.6"/><path d="M4.2 7.2l2 2 3.8-4" fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  renderCamSmall: `<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2.2" y="3.2" width="9.6" height="8" rx="1.2"/><circle cx="7" cy="7.4" r="2"/></svg>`,
+
+  // 15 Properties vertical tab icons (matching exact Blender colors from screenshot)
+  propTool: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#d8d8d8" stroke-width="1.4" stroke-linecap="round"><path d="M5 2.5v11M3.8 2.5h2.4M10.5 6.5v7"/><path d="M8.8 4.2a2.2 2.2 0 1 1 3.4 1.8v.5h-2v-.5a2.2 2.2 0 0 1-1.4-1.8z"/></svg>`,
+  propRender: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#d8d8d8" stroke-width="1.3"><rect x="2" y="4" width="12" height="9" rx="1.5"/><path d="M5.5 4l1-1.6h3L10.5 4"/><rect x="4.5" y="6.5" width="7" height="4.2" rx="0.6"/></svg>`,
+  propOutput: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#d8d8d8" stroke-width="1.3"><path d="M4.5 5V2.5h7V5"/><rect x="2.2" y="5" width="11.6" height="5.8" rx="1.2"/><rect x="4.5" y="9.2" width="7" height="4.3" fill="#161616"/></svg>`,
+  propViewLayer: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#d8d8d8" stroke-width="1.3"><rect x="2.2" y="4.5" width="9" height="8.5" rx="1"/><path d="M5.2 2.5h8.6v8.5"/></svg>`,
+  propScene: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#d8d8d8" stroke-width="1.25"><circle cx="5.2" cy="10.8" r="2.6"/><path d="M8.8 3.2l4.2 8.2H7.6z"/></svg>`,
+  propWorld: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#df5a5a" stroke-width="1.25"><circle cx="8" cy="8" r="5.5"/><ellipse cx="8" cy="8" rx="2.5" ry="5.5"/><path d="M2.6 8h10.8"/></svg>`,
+  propCollection: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#d8d8d8" stroke-width="1.3"><rect x="2.5" y="3" width="11" height="10" rx="1.4"/><path d="M2.5 6.2h11"/></svg>`,
+  propObject: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#ee8c35" stroke-width="1.4"><rect x="5" y="5" width="6" height="6" fill="#ee8c35"/><path d="M2.5 5.2V2.5h2.7M10.8 2.5h2.7v2.7M13.5 10.8v2.7h-2.7M5.2 13.5H2.5v-2.7"/></svg>`,
+  propModifiers: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#4d8ef7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.2 3a3.5 3.5 0 0 0-3 5.2L3 12.4l1.6 1.6 4.2-4.2A3.5 3.5 0 0 0 13 6l-2.1 2.1-1.9-.6-.6-1.9z"/></svg>`,
+  propParticles: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#4d8ef7" stroke-width="1.3" stroke-linecap="round"><path d="M5 2.5v4M3 4.5h4M11.5 4v3M10 5.5h3M8.5 9.5v4M6.5 11.5h4"/><circle cx="4.5" cy="11.5" r="1" fill="#4d8ef7"/></svg>`,
+  propPhysics: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#4d8ef7" stroke-width="1.3"><circle cx="8" cy="8" r="2.2" fill="#4d8ef7"/><ellipse cx="8" cy="8" rx="6" ry="2.6" transform="rotate(-28 8 8)"/></svg>`,
+  propConstraints: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#4d8ef7" stroke-width="1.3"><circle cx="5.2" cy="10.8" r="2.6"/><circle cx="11" cy="5" r="2"/><path d="M3.5 9L9.6 3.5M6.9 12.5L12.5 6.4"/></svg>`,
+  propData: `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="#3bc97c" stroke-width="1.3"><path d="M3.5 12L8 3.8 12.5 12z"/><circle cx="8" cy="3.8" r="1.5" fill="#3bc97c" stroke="none"/><circle cx="3.5" cy="12" r="1.5" fill="#3bc97c" stroke="none"/><circle cx="12.5" cy="12" r="1.5" fill="#3bc97c" stroke="none"/></svg>`,
+  propMaterial: `<svg viewBox="0 0 16 16" width="14" height="14"><circle cx="8" cy="8" r="5.4" fill="none" stroke="#e45f5d" stroke-width="1.3"/><path d="M8 2.6A5.4 5.4 0 0 1 13.4 8H8V2.6z" fill="#e45f5d"/><path d="M2.6 8A5.4 5.4 0 0 0 8 13.4V8H2.6z" fill="#e45f5d"/></svg>`,
+  propTexture: `<svg viewBox="0 0 16 16" width="14" height="14"><rect x="2.5" y="2.5" width="11" height="11" rx="1.2" fill="none" stroke="#e45f5d" stroke-width="1.2"/><rect x="3" y="3" width="5" height="5" fill="#e45f5d"/><rect x="8" y="8" width="5" height="5" fill="#e45f5d"/></svg>`,
+
+  // Inspector icons
+  pin: `<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M8.5 2.2l3.3 3.3-1.8 1.2-.6 2.8-4.9-4.9 2.8-.6zM5.8 8.2L2.5 11.5"/></svg>`,
+  lockOpen: `<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><rect x="3.2" y="6.5" width="7.2" height="5.2" rx="1"/><path d="M5 6.5V4.6a2.1 2.1 0 0 1 4.1-.6"/></svg>`,
+  lockClosed: `<svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="#ffb347" stroke-width="1.3" stroke-linecap="round"><rect x="3.2" y="6.5" width="7.2" height="5.2" rx="1" fill="#ffb347" fill-opacity="0.25"/><path d="M4.8 6.5V4.6a2 2 0 0 1 4 0v1.9"/></svg>`,
+  cubeSmall: `<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M7 1.8l4.5 2.5v5.4L7 12.2 2.5 9.7V4.3z" fill="currentColor" fill-opacity="0.2"/><path d="M2.5 4.3L7 6.8l4.5-2.5M7 6.8v5.4"/></svg>`,
+
+  // Timeline transport
+  recordDot: `<svg viewBox="0 0 14 14" width="11" height="11"><circle cx="7" cy="7" r="3.6" fill="currentColor"/></svg>`,
+  jumpStart: `<svg viewBox="0 0 14 14" width="11" height="11" fill="currentColor"><rect x="2.2" y="3" width="1.8" height="8"/><path d="M11.2 3L5.2 7l6 4z"/></svg>`,
+  prevKey: `<svg viewBox="0 0 14 14" width="11" height="11" fill="currentColor"><path d="M7.5 3L2.2 7l5.3 4zM12.2 3L6.9 7l5.3 4z"/></svg>`,
+  playRev: `<svg viewBox="0 0 14 14" width="11" height="11" fill="currentColor"><path d="M10.5 2.6L3.5 7l7 4.4z"/></svg>`,
+  playFwd: `<svg viewBox="0 0 14 14" width="11" height="11" fill="currentColor"><path d="M3.5 2.6L10.5 7l-7 4.4z"/></svg>`,
+  pause: `<svg viewBox="0 0 14 14" width="11" height="11" fill="currentColor"><rect x="3.2" y="2.8" width="2.6" height="8.4" rx="0.5"/><rect x="8.2" y="2.8" width="2.6" height="8.4" rx="0.5"/></svg>`,
+  nextKey: `<svg viewBox="0 0 14 14" width="11" height="11" fill="currentColor"><path d="M1.8 3l5.3 4-5.3 4zM6.5 3l5.3 4-5.3 4z"/></svg>`,
+  jumpEnd: `<svg viewBox="0 0 14 14" width="11" height="11" fill="currentColor"><path d="M2.8 3l6 4-6 4z"/><rect x="10" y="3" width="1.8" height="8"/></svg>`,
+  previewRange: `<svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="7" cy="7.5" r="4.3"/><path d="M7 5.2v2.5l1.6 1M5.5 1.8h3"/></svg>`
+};
