@@ -190,6 +190,7 @@ jobs:
             gh release upload "$TAG_NAME" Modix-3D.apk Modix-3D.ipa --clobber
           else
             gh release create "$TAG_NAME" Modix-3D.apk Modix-3D.ipa \
+              --target "${{ github.sha }}" \
               --title "Modix 3D $TAG_NAME (Android .apk & iOS .ipa)" \
               --notes "Pacotes nativos Modix 3D compilados via GitHub Actions: Modix-3D.apk (Android Landscape) e Modix-3D.ipa (iOS Landscape)."
           fi
