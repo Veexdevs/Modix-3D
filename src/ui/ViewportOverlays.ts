@@ -46,7 +46,8 @@ export class ViewportOverlays {
     optBtn.addEventListener('click', () => {
       openDropdownMenu(optBtn, [
         {
-          label: `${this.engine.state.showOverlays ? '✓ ' : ''}Show Overlays & Grid`,
+          label: 'Show Overlays & Grid',
+          icon: this.engine.state.showOverlays ? Icons.check : undefined,
           onClick: () => {
             this.engine.state.showOverlays = !this.engine.state.showOverlays;
             this.engine.rebuildSceneObjects();
@@ -54,7 +55,8 @@ export class ViewportOverlays {
           }
         },
         {
-          label: `${this.engine.state.xray ? '✓ ' : ''}Toggle X-Ray`,
+          label: 'Toggle X-Ray',
+          icon: this.engine.state.xray ? Icons.check : undefined,
           onClick: () => {
             this.engine.state.xray = !this.engine.state.xray;
             this.engine.rebuildSceneObjects();
@@ -342,7 +344,7 @@ export class ViewportOverlays {
         const brushPx = st.sculpt.paintBrushPx ?? 18;
         const opVal = st.sculpt.paintOpacity ?? 1;
         this.sculptBarEl.innerHTML = `
-          <strong style="color:#93c5fd;">🖌 Pintura 3D</strong>
+          <strong style="color:#93c5fd;display:inline-flex;align-items:center;gap:4px;">${Icons.brush}<span>Pintura 3D</span></strong>
           <label>Cor <input type="color" value="${st.sculpt.paintColor}" data-pt="color" style="width:24px;height:18px;border:none;background:none;" /></label>
           <label>Pincel <input type="range" min="2" max="64" step="1" value="${brushPx}" data-pt="px" /></label>
           <label>Opac. <input type="range" min="0.05" max="1" step="0.05" value="${opVal}" data-pt="op" /></label>
@@ -350,7 +352,7 @@ export class ViewportOverlays {
             <option value="texture" ${ptTarget === 'texture' ? 'selected' : ''}>Textura UV</option>
             <option value="vertex" ${ptTarget === 'vertex' ? 'selected' : ''}>Vértices</option>
           </select>
-          <button type="button" class="modix-btn primary" data-pt="studio" style="height:20px;padding:0 7px;">🎨 Estúdio 2D</button>
+          <button type="button" class="modix-btn primary" data-pt="studio" style="height:20px;padding:0 7px;">${Icons.palette}<span>Estúdio 2D</span></button>
         `;
         this.sculptBarEl.querySelector('[data-pt="color"]')?.addEventListener('input', (e) => {
           st.sculpt.paintColor = (e.target as HTMLInputElement).value;
@@ -455,7 +457,7 @@ export class ViewportOverlays {
         <div class="drawer-hdr"><span>Geometry Nodes Graph</span>${closeBtn}</div>
         <div class="drawer-body" style="display:flex;flex-direction:column;gap:8px;">
           <div style="background:#141414;border:1px solid #2e2e2e;border-radius:5px;padding:8px;">
-            <div style="color:#3bc97c;font-weight:600;margin-bottom:4px;">Group Input → Mesh Pipeline → Group Output</div>
+            <div style="color:#3bc97c;font-weight:600;margin-bottom:4px;display:flex;align-items:center;gap:4px;"><span>Group Input</span>${Icons.arrowRight}<span>Mesh Pipeline</span>${Icons.arrowRight}<span>Group Output</span></div>
             <div style="color:#aaa;font-size:10.5px;">Add procedural node presets to the active object:</div>
           </div>
           <button type="button" class="modix-btn primary" data-gn="array">Add Linear Array Node (3x)</button>
@@ -496,7 +498,7 @@ export class ViewportOverlays {
 const torus = modix.add('torus');
 torus.location = [0, 0, 2.2];
 torus.scale = [0.8, 0.8, 0.8];</textarea>
-          <button type="button" class="modix-btn primary" id="run-modix-script">▶ Run Script</button>
+          <button type="button" class="modix-btn primary" id="run-modix-script">${Icons.play}<span>Run Script</span></button>
         </div>
       `;
       this.drawerEl.querySelector('#run-modix-script')?.addEventListener('click', () => {

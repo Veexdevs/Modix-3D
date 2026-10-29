@@ -3113,6 +3113,54 @@ export class ModixEngine {
     return dataUrl;
   }
 
+  public captureThumbnailDataURL(width = 360, height = 202): string {
+    if (!this.renderer || !this.scene) return '';
+    try {
+      const prevSize = new THREE.Vector2();
+      this.renderer.getSize(prevSize);
+      this.renderer.setSize(width, height, false);
+      this.perspCamera.aspect = width / height;
+      this.perspCamera.updateProjectionMatrix();
+
+      this.renderer.render(this.scene, this.perspCamera);
+      const dataUrl = this.renderer.domElement.toDataURL('image/jpeg', 0.8);
+
+      this.handleResize();
+      this.renderFrame();
+      return dataUrl;
+    } catch {
+      return '';
+    }
+  }
+
+  public loadProjectState(nextState: ModixProjectState): void {
+    for (const entry of this.textureCanvases.values()) {
+      entry.texture.dispose();
+    }
+    this.textureCanvases.clear();
+    this.undoStack = [];
+    this.redoStack = [];
+    const base = this.createStartupState();
+    this.state = {
+      ...base,
+      ...JSON.parse(JSON.stringify(nextState)),
+      sculpt: {
+        ...base.sculpt,
+        ...(nextState.sculpt || {})
+      },
+      world: {
+        ...base.world,
+        ...(nextState.world || {})
+      },
+      compositor: {
+        ...base.compositor,
+        ...(nextState.compositor || {})
+      }
+    };
+    this.rebuildSceneObjects();
+    this.notify();
+  }
+
   public getExportableThreeGroup(): THREE.Group {
     const exportGroup = new THREE.Group();
     for (const obj of this.state.objects) {

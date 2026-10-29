@@ -1,13 +1,12 @@
 import {
+  exportSceneToBinarySTL,
   exportSceneToDAE,
+  exportSceneToGLB,
+  exportSceneToGLTF,
   exportSceneToMTL,
   exportSceneToOBJ,
   exportSceneToPLY,
-  exportSceneToRBXMX,
-  exportSceneToSTL,
-  exportThreeGroupToGLB,
-  exportThreeGroupToGLTF,
-  exportThreeGroupToUSDZ,
+  exportSceneToUSDZ,
   importAny3DFile,
   saveDataUrlPNG,
   saveOrShareFile,
@@ -16,6 +15,11 @@ import {
 } from '../engine/Exporters';
 import { ModixEngine } from '../engine/ModixEngine';
 import { Icons } from '../icons/blenderIcons';
+import {
+  saveUserProject,
+  type ModixSavedProject,
+  type ModixUserAccount
+} from '../services/AccountProjectsService';
 import type {
   ActiveToolId,
   InteractionMode,
@@ -27,11 +31,11 @@ import type {
 } from '../types/scene';
 import { AIChatPanel } from './AIChatPanel';
 import {
+  closeActiveDropdown,
   openDropdownMenu,
   openExportHubModal,
   openRenderResultModal,
   openSliceMeshModal,
-  openSplashModal,
   openTextPromptModal,
   showToast,
   type DropdownItem,
@@ -56,9 +60,21 @@ const WORKSPACES: WorkspaceId[] = [
   'Scripting'
 ];
 
+export interface EditorAppOptions {
+  project?: ModixSavedProject;
+  account?: ModixUserAccount;
+  onBackToProjects?: () => void;
+}
+
 export class EditorApp {
   public engine: ModixEngine;
   private root: HTMLElement;
+  private activeProject?: ModixSavedProject;
+  private activeAccount?: ModixUserAccount;
+  private onBackToProjects?: () => void;
+  private autoSaveTimer: number | undefined;
+  private keydownHandler?: (e: KeyboardEvent) => void;
+  private unsubscribeEngine?: () => void;
 
   private wsBarEl!: HTMLElement;
   private vpHeaderEl!: HTMLElement;
@@ -75,8 +91,11 @@ export class EditorApp {
   private timelinePanel!: TimelinePanel;
   private aiPanel!: AIChatPanel;
 
-  constructor(root: HTMLElement) {
+  constructor(root: HTMLElement, opts?: EditorAppOptions) {
     this.root = root;
+    this.activeProject = opts?.project;
+    this.activeAccount = opts?.account;
+    this.onBackToProjects = opts?.onBackToProjects;
     this.engine = new ModixEngine();
     this.aiPanel = new AIChatPanel(this.engine, showToast);
     this.mountUI();
@@ -86,11 +105,19 @@ export class EditorApp {
     this.root.innerHTML = `
       <div class="modix-shell">
         <div class="portrait-rotate-banner">
-          <span>↻ Modix 3D foi desenhado para tela deitada (Landscape). Gire o aparelho para a experiência completa.</span>
+          ${Icons.rotateDevice}
+          <span>Modix 3D foi desenhado para tela deitada (Landscape). Gire o aparelho para a experiência completa.</span>
         </div>
 
         <!-- 1. TOP MENU & WORKSPACE BAR -->
         <header class="modix-topbar">
+          ${
+            this.onBackToProjects
+              ? `<button type="button" class="modix-projects-back-btn" id="btn-back-projects" title="Salvar e voltar para a tela de Projetos">
+                  ${Icons.arrowBack}<span>Projetos</span>
+                 </button>`
+              : ''
+          }
           <button type="button" class="modix-brand-btn" id="modix-app-menu-btn" title="Modix 3D Menu">
             <img src="./brand/modix-mark-white.png" alt="Modix" class="modix-brand-icon" />
             <span class="modix-brand-title">Modix</span>
@@ -100,7 +127,7 @@ export class EditorApp {
 
           <div class="modix-topbar-right">
             <button type="button" class="modix-ai-top-btn" id="btn-open-ai" title="Abrir Chat com IA ou Agente Multi-IA 3D">
-              <span class="ai-star">✦</span><span>IA / Agente</span>
+              <span class="ai-star">${Icons.sparkles}</span><span>IA / Agente</span>
             </button>
             <button type="button" class="modix-scene-pill" id="btn-scene-pill">
               ${Icons.scene}<span id="lbl-scene-name">Scene</span><span class="pill-chevron">${Icons.chevronDown}</span>
@@ -129,8 +156,8 @@ export class EditorApp {
                 <button type="button" class="hdr-pill" id="outliner-editor-btn" style="padding:0 5px;height:20px;" title="Explorer / Outliner">
                   ${Icons.editorOutliner}${Icons.chevronDown}
                 </button>
-                <button type="button" class="hdr-pill" id="outliner-new-group-btn" style="padding:0 6px;height:20px;" title="Criar Novo Grupo / Coleção">
-                  ${Icons.collectionBox}<span style="font-size:10px;">+</span>
+                <button type="button" class="hdr-pill" id="outliner-new-group-btn" style="padding:0 5px;height:20px;" title="Criar Novo Grupo / Coleção">
+                  ${Icons.folderPlus}
                 </button>
                 <div class="search-pill">
                   ${Icons.searchGlass}
@@ -159,7 +186,7 @@ export class EditorApp {
         <input
           type="file"
           id="modix-file-input"
-          accept=".obj,.fbx,.glb,.gltf,.dae,.stl,.ply,.3mf,.amf,.svg,.off,.rbxmx,.modix,.json,.png,.jpg,.jpeg,.webp"
+          accept=".obj,.fbx,.glb,.gltf,.dae,.stl,.ply,.3mf,.amf,.svg,.off,.modix,.json,.png,.jpg,.jpeg,.webp"
           style="display:none;"
         />
       </div>
@@ -176,6 +203,10 @@ export class EditorApp {
     this.fileInputEl = this.root.querySelector('#modix-file-input')!;
 
     this.engine.mount(this.vpStageEl);
+
+    if (this.activeProject?.projectData) {
+      this.engine.loadProjectState(this.activeProject.projectData);
+    }
 
     this.overlays = new ViewportOverlays(this.engine, this.vpStageEl);
     this.propsPanel = new PropertiesPanel(
@@ -197,8 +228,49 @@ export class EditorApp {
     this.bindOutlinerSearchAndImport();
     this.bindKeyboardShortcuts();
 
-    this.engine.subscribe(() => this.syncAll());
+    this.unsubscribeEngine = this.engine.subscribe(() => {
+      this.syncAll();
+      this.scheduleAutoSave();
+    });
     this.syncAll();
+  }
+
+  private scheduleAutoSave(): void {
+    if (!this.activeProject || !this.activeAccount) return;
+    window.clearTimeout(this.autoSaveTimer);
+    this.autoSaveTimer = window.setTimeout(() => {
+      void this.persistProjectNow(false);
+    }, 2200);
+  }
+
+  public async persistProjectNow(withToast = false): Promise<void> {
+    if (!this.activeProject || !this.activeAccount) return;
+    window.clearTimeout(this.autoSaveTimer);
+    const thumb = this.engine.captureThumbnailDataURL(360, 202);
+    const projectName = this.engine.state.sceneName || this.activeProject.name;
+    this.activeProject = await saveUserProject(
+      this.activeProject.id,
+      this.activeAccount.id,
+      projectName,
+      this.engine.state,
+      thumb || this.activeProject.thumbnailUrl
+    );
+    if (withToast) {
+      showToast(`Projeto "${projectName}" salvo.`);
+    }
+  }
+
+  public destroy(): void {
+    window.clearTimeout(this.autoSaveTimer);
+    closeActiveDropdown();
+    if (this.keydownHandler) {
+      window.removeEventListener('keydown', this.keydownHandler);
+      this.keydownHandler = undefined;
+    }
+    this.unsubscribeEngine?.();
+    this.aiPanel.destroy();
+    this.overlays.destroy();
+    this.engine.destroy();
   }
 
   /** Touch & Mouse vertical drag handle right under the Explorer/Outliner */
@@ -240,76 +312,108 @@ export class EditorApp {
   }
 
   private bindTopBarEvents(): void {
+    this.root.querySelector('#btn-back-projects')?.addEventListener('click', async () => {
+      await this.persistProjectNow(false);
+      this.onBackToProjects?.();
+    });
+
     this.root.querySelector('#btn-open-ai')?.addEventListener('click', () => {
       this.aiPanel.toggle();
     });
 
     const brandBtn = this.root.querySelector<HTMLElement>('#modix-app-menu-btn')!;
     brandBtn.addEventListener('click', () => {
-      openDropdownMenu(brandBtn, [
+      const items: DropdownItem[] = [];
+      if (this.onBackToProjects) {
+        items.push({
+          label: 'Voltar para Meus Projetos',
+          icon: Icons.arrowBack,
+          onClick: async () => {
+            await this.persistProjectNow(false);
+            this.onBackToProjects?.();
+          }
+        });
+        items.push({
+          label: 'Salvar Projeto Agora',
+          icon: Icons.save,
+          shortcut: 'Ctrl+S',
+          onClick: () => void this.persistProjectNow(true)
+        });
+        items.push({ separator: true });
+      }
+
+      items.push(
         {
-          label: 'Splash Screen / Sobre Modix 3D',
-          onClick: () => this.showSplash()
-        },
-        {
-          label: '✦ Abrir Chat IA / Agente Multi-IA',
+          label: 'Abrir Chat IA / Agente Multi-IA',
+          icon: Icons.sparkles,
           onClick: () => this.aiPanel.open()
         },
         { separator: true },
         { sectionTitle: 'Arquivo & Importação Universal' },
         {
-          label: 'Nova Cena Padrão',
+          label: 'Reiniciar Cena Padrão',
+          icon: Icons.cubeSmall,
           shortcut: 'Ctrl+N',
           onClick: () => this.resetScene()
         },
         {
-          label: 'Importar 3D (.OBJ, .FBX, .GLB, .DAE, .STL, .PLY, .3MF, .SVG, .RBXMX)...',
+          label: 'Importar 3D (.OBJ, .FBX, .GLB, .DAE, .STL, .PLY, .3MF, .SVG)...',
+          icon: Icons.upload,
           onClick: () => this.fileInputEl.click()
         },
         {
           label: 'Estúdio de Desenho & Pintura de Textura 2D',
+          icon: Icons.palette,
           onClick: () => openTextureStudioModal(this.engine, showToast)
         },
         {
-          label: 'Salvar Projeto (.MODIX)',
-          shortcut: 'Ctrl+S',
+          label: 'Exportar Arquivo de Projeto (.MODIX)',
+          icon: Icons.save,
           onClick: () => void this.handleExport('modix')
         },
         { separator: true },
-        { sectionTitle: 'Exportar Modelo 3D & Roblox Studio' },
+        { sectionTitle: 'Exportar Modelo 3D' },
         {
-          label: '🚀 Central de Exportação Completa...',
+          label: 'Central de Exportação Completa...',
+          icon: Icons.download,
           onClick: () => this.openExportHub()
         },
         {
-          label: '🎮 Exportar .OBJ p/ Roblox Studio (Y-Up + UVs)',
-          onClick: () => void this.handleExport('obj_roblox')
+          label: 'Exportar Wavefront (.OBJ + UVs + Normais)',
+          icon: Icons.file3d,
+          onClick: () => void this.handleExport('obj')
         },
         {
-          label: '🧱 Exportar .RBXMX (Modelo Roblox Parts)',
-          onClick: () => void this.handleExport('rbxmx')
-        },
-        {
-          label: '📦 Exportar glTF Binário (.GLB + Texturas)',
+          label: 'Exportar glTF Binário (.GLB + PBR)',
+          icon: Icons.file3d,
           onClick: () => void this.handleExport('glb')
         },
         {
-          label: '🖨 Exportar Impressão 3D (.STL)',
+          label: 'Exportar Universal Scene (.USDZ)',
+          icon: Icons.cubeSmall,
+          onClick: () => void this.handleExport('usdz')
+        },
+        {
+          label: 'Exportar Stereolithography (.STL)',
+          icon: Icons.cubeSmall,
           onClick: () => void this.handleExport('stl')
         },
         {
-          label: '📱 Exportar Apple AR (.USDZ)',
-          onClick: () => void this.handleExport('usdz')
+          label: 'Exportar COLLADA (.DAE)',
+          icon: Icons.layers,
+          onClick: () => void this.handleExport('dae')
         },
         { separator: true },
         {
           label: 'Renderizar Imagem (PNG)',
+          icon: Icons.cameraPhoto,
           shortcut: 'F12',
           onClick: () => this.triggerRenderModal()
         },
         { separator: true },
         {
           label: 'Desfazer (Undo)',
+          icon: Icons.undo,
           shortcut: 'Ctrl+Z',
           onClick: () => {
             if (this.engine.undo()) showToast('Desfeito (Undo)');
@@ -317,38 +421,47 @@ export class EditorApp {
         },
         {
           label: 'Refazer (Redo)',
+          icon: Icons.redo,
           shortcut: 'Ctrl+Y',
           onClick: () => {
             if (this.engine.redo()) showToast('Refeito (Redo)');
           }
         }
-      ]);
+      );
+
+      openDropdownMenu(brandBtn, items);
     });
 
     this.root.querySelector('#btn-scene-pill')?.addEventListener('click', (e) => {
       openDropdownMenu(e.currentTarget as HTMLElement, [
         {
-          label: 'Renomear Cena...',
+          label: 'Renomear Projeto / Cena...',
+          icon: Icons.edit,
           onClick: () =>
             openTextPromptModal({
-              title: 'Renomear Cena',
-              label: 'Nome da cena:',
+              title: 'Renomear Projeto / Cena',
+              label: 'Nome:',
               initialValue: this.engine.state.sceneName,
               onConfirm: (v) => {
                 this.engine.state.sceneName = v;
                 this.engine.notify();
+                void this.persistProjectNow(false);
               }
             })
         },
-        { label: 'Resetar Cena Inicial', onClick: () => this.resetScene() }
+        {
+          label: 'Reiniciar Cena Inicial',
+          icon: Icons.cubeSmall,
+          onClick: () => this.resetScene()
+        }
       ]);
     });
 
     this.root.querySelector('#btn-viewlayer-pill')?.addEventListener('click', (e) => {
       openDropdownMenu(e.currentTarget as HTMLElement, [
-        { label: 'ViewLayer (Principal)', onClick: () => {} },
-        { label: 'Central de Exportação 3D', onClick: () => this.openExportHub() },
-        { label: 'Renderizar PNG', onClick: () => this.triggerRenderModal() }
+        { label: 'ViewLayer (Principal)', icon: Icons.viewLayer, onClick: () => {} },
+        { label: 'Central de Exportação 3D', icon: Icons.download, onClick: () => this.openExportHub() },
+        { label: 'Renderizar PNG', icon: Icons.cameraPhoto, onClick: () => this.triggerRenderModal() }
       ]);
     });
   }
@@ -428,9 +541,9 @@ export class EditorApp {
     const plusBtn = document.createElement('button');
     plusBtn.type = 'button';
     plusBtn.className = 'modix-ws-plus';
-    plusBtn.title = 'Splash / New Workspace';
+    plusBtn.title = 'Exportar / Importar';
     plusBtn.innerHTML = Icons.plus;
-    plusBtn.addEventListener('click', () => this.showSplash());
+    plusBtn.addEventListener('click', () => this.openExportHub());
     this.wsBarEl.appendChild(plusBtn);
   }
 
@@ -527,13 +640,14 @@ export class EditorApp {
         this.engine.notify();
       };
       openDropdownMenu(e.currentTarget as HTMLElement, [
-        { label: 'Object Mode', shortcut: 'Tab', onClick: () => setMode('OBJECT') },
-        { label: 'Edit Mode', shortcut: 'Tab', onClick: () => setMode('EDIT') },
-        { label: 'Sculpt Mode', onClick: () => setMode('SCULPT') },
-        { label: 'Texture Paint (Pintar 3D)', onClick: () => setMode('TEXTURE_PAINT') },
+        { label: 'Object Mode', icon: Icons.modeObject, shortcut: 'Tab', onClick: () => setMode('OBJECT') },
+        { label: 'Edit Mode', icon: Icons.modeEdit, shortcut: 'Tab', onClick: () => setMode('EDIT') },
+        { label: 'Sculpt Mode', icon: Icons.modeSculpt, onClick: () => setMode('SCULPT') },
+        { label: 'Texture Paint (Pintar 3D)', icon: Icons.modePaint, onClick: () => setMode('TEXTURE_PAINT') },
         { separator: true },
         {
-          label: '🎨 Estúdio de Desenho de Texturas 2D...',
+          label: 'Estúdio de Desenho de Texturas 2D...',
+          icon: Icons.palette,
           onClick: () => openTextureStudioModal(this.engine, showToast)
         }
       ]);
@@ -617,7 +731,7 @@ export class EditorApp {
       ]);
     });
 
-    // Expanded Add Menu (All 24 3D Primitives + Groups + Import!)
+    // Expanded Add Menu (All 24 3D Primitives + Groups + Import)
     this.vpHeaderEl.querySelector('#menu-add')?.addEventListener('click', (e) => {
       const addP = (t: PrimitiveType) => {
         const created = this.engine.addPrimitive(t);
@@ -625,61 +739,68 @@ export class EditorApp {
       };
       openDropdownMenu(e.currentTarget as HTMLElement, [
         { sectionTitle: 'Formas Básicas 3D' },
-        { label: 'Cube (Cubo)', onClick: () => addP('cube') },
-        { label: 'Plane (Plano)', onClick: () => addP('plane') },
-        { label: 'Grid (Grade Subdividida)', onClick: () => addP('grid') },
-        { label: 'UV Sphere (Esfera)', onClick: () => addP('uv_sphere') },
-        { label: 'Ico Sphere (Icoesfera)', onClick: () => addP('ico_sphere') },
-        { label: 'Cylinder (Cilindro)', onClick: () => addP('cylinder') },
-        { label: 'Cone', onClick: () => addP('cone') },
-        { label: 'Torus (Rosquinha)', onClick: () => addP('torus') },
-        { label: 'Capsule (Cápsula)', onClick: () => addP('capsule') },
+        { label: 'Cube (Cubo)', icon: Icons.cubeSmall, onClick: () => addP('cube') },
+        { label: 'Plane (Plano)', icon: Icons.cubeSmall, onClick: () => addP('plane') },
+        { label: 'Grid (Grade Subdividida)', icon: Icons.cubeSmall, onClick: () => addP('grid') },
+        { label: 'UV Sphere (Esfera)', icon: Icons.cubeSmall, onClick: () => addP('uv_sphere') },
+        { label: 'Ico Sphere (Icoesfera)', icon: Icons.cubeSmall, onClick: () => addP('ico_sphere') },
+        { label: 'Cylinder (Cilindro)', icon: Icons.cubeSmall, onClick: () => addP('cylinder') },
+        { label: 'Cone', icon: Icons.cubeSmall, onClick: () => addP('cone') },
+        { label: 'Torus (Rosquinha)', icon: Icons.cubeSmall, onClick: () => addP('torus') },
+        { label: 'Capsule (Cápsula)', icon: Icons.cubeSmall, onClick: () => addP('capsule') },
         { separator: true },
-        { sectionTitle: 'Arquitetura & Roblox Studio' },
-        { label: 'Wedge (Rampa Roblox)', onClick: () => addP('wedge') },
-        { label: 'Corner Wedge (Rampa de Canto)', onClick: () => addP('corner_wedge') },
-        { label: 'Pyramid (Pirâmide)', onClick: () => addP('pyramid') },
-        { label: 'Prism (Prisma Triangular)', onClick: () => addP('prism') },
-        { label: 'Hexagon (Coluna Hexagonal)', onClick: () => addP('hex_cylinder') },
-        { label: 'Pipe (Tubo Oco)', onClick: () => addP('pipe') },
-        { label: 'Arch (Arco / Portal)', onClick: () => addP('arch') },
-        { label: 'Stairs (Escada)', onClick: () => addP('stairs') },
+        { sectionTitle: 'Arquitetura & Geometria Estrutural' },
+        { label: 'Wedge (Rampa / Cunha)', icon: Icons.cubeSmall, onClick: () => addP('wedge') },
+        { label: 'Corner Wedge (Cunha de Canto)', icon: Icons.cubeSmall, onClick: () => addP('corner_wedge') },
+        { label: 'Pyramid (Pirâmide)', icon: Icons.cubeSmall, onClick: () => addP('pyramid') },
+        { label: 'Prism (Prisma Triangular)', icon: Icons.cubeSmall, onClick: () => addP('prism') },
+        { label: 'Hexagon (Coluna Hexagonal)', icon: Icons.cubeSmall, onClick: () => addP('hex_cylinder') },
+        { label: 'Pipe (Tubo Oco)', icon: Icons.cubeSmall, onClick: () => addP('pipe') },
+        { label: 'Arch (Arco / Portal)', icon: Icons.cubeSmall, onClick: () => addP('arch') },
+        { label: 'Stairs (Escada)', icon: Icons.cubeSmall, onClick: () => addP('stairs') },
         { separator: true },
         { sectionTitle: 'Formas Especiais & Arte' },
-        { label: 'Star (Estrela 3D)', onClick: () => addP('star') },
-        { label: 'Gear (Engrenagem)', onClick: () => addP('gear') },
-        { label: 'Ring (Anel)', onClick: () => addP('ring') },
-        { label: 'Crystal (Cristal / Diamante)', onClick: () => addP('crystal') },
-        { label: 'Heart (Coração 3D)', onClick: () => addP('heart') },
-        { label: 'Torus Knot (Nó 3D)', onClick: () => addP('torus_knot') },
-        { label: 'Suzanne (Macaco)', onClick: () => addP('monkey') },
+        { label: 'Star (Estrela 3D)', icon: Icons.cubeSmall, onClick: () => addP('star') },
+        { label: 'Gear (Engrenagem)', icon: Icons.cubeSmall, onClick: () => addP('gear') },
+        { label: 'Ring (Anel)', icon: Icons.cubeSmall, onClick: () => addP('ring') },
+        { label: 'Crystal (Cristal / Diamante)', icon: Icons.cubeSmall, onClick: () => addP('crystal') },
+        { label: 'Heart (Coração 3D)', icon: Icons.cubeSmall, onClick: () => addP('heart') },
+        { label: 'Torus Knot (Nó 3D)', icon: Icons.cubeSmall, onClick: () => addP('torus_knot') },
+        { label: 'Suzanne (Macaco)', icon: Icons.cubeSmall, onClick: () => addP('monkey') },
         { separator: true },
         { sectionTitle: 'Cena, Grupos & Arquivos' },
-        { label: '📁 Novo Grupo / Coleção...', onClick: () => this.promptCreateGroup() },
-        { label: 'Light (Ponto de Luz)', onClick: () => this.engine.addSceneNonMesh('LIGHT') },
-        { label: 'Camera', onClick: () => this.engine.addSceneNonMesh('CAMERA') },
-        { label: 'Empty (Eixos)', onClick: () => this.engine.addSceneNonMesh('EMPTY') },
-        { label: '📂 Importar Arquivo 3D...', onClick: () => this.fileInputEl.click() }
+        { label: 'Novo Grupo / Coleção...', icon: Icons.folderPlus, onClick: () => this.promptCreateGroup() },
+        { label: 'Light (Ponto de Luz)', icon: Icons.outlinerLightOrange, onClick: () => this.engine.addSceneNonMesh('LIGHT') },
+        { label: 'Camera', icon: Icons.outlinerCamOrange, onClick: () => this.engine.addSceneNonMesh('CAMERA') },
+        { label: 'Empty (Eixos)', icon: Icons.outlinerEmptyOrange, onClick: () => this.engine.addSceneNonMesh('EMPTY') },
+        { label: 'Importar Arquivo 3D...', icon: Icons.upload, onClick: () => this.fileInputEl.click() }
       ]);
     });
 
-    // Expanded Object / Mesh Menu (Rename, Copy, Paste, Cut, Join, Group, Slice 3D, Texture, Delete)
+    // Expanded Object / Mesh Menu
     this.vpHeaderEl.querySelector('#menu-object')?.addEventListener('click', (e) => {
       if (st.mode === 'EDIT') {
         openDropdownMenu(e.currentTarget as HTMLElement, [
           { sectionTitle: 'Modelagem de Malha' },
-          { label: 'Extrude Faces', shortcut: 'E', onClick: () => this.engine.performEditMeshOp('extrude') },
-          { label: 'Inset Faces', shortcut: 'I', onClick: () => this.engine.performEditMeshOp('inset') },
-          { label: 'Bevel Faces', shortcut: 'Ctrl+B', onClick: () => this.engine.performEditMeshOp('bevel') },
-          { label: 'Subdivide Quads', onClick: () => this.engine.performEditMeshOp('subdivide') },
-          { label: 'Catmull-Clark Smooth', onClick: () => this.engine.performEditMeshOp('subsurf') },
-          { label: 'Loop Cut (Mid Z)', shortcut: 'Ctrl+R', onClick: () => this.engine.performEditMeshOp('loop_cut') },
+          { label: 'Extrude Faces', icon: Icons.toolExtrude, shortcut: 'E', onClick: () => this.engine.performEditMeshOp('extrude') },
+          { label: 'Inset Faces', icon: Icons.toolInset, shortcut: 'I', onClick: () => this.engine.performEditMeshOp('inset') },
+          { label: 'Bevel Faces', icon: Icons.toolBevel, shortcut: 'Ctrl+B', onClick: () => this.engine.performEditMeshOp('bevel') },
+          { label: 'Subdivide Quads', icon: Icons.cubeSmall, onClick: () => this.engine.performEditMeshOp('subdivide') },
+          { label: 'Catmull-Clark Smooth', icon: Icons.cubeSmall, onClick: () => this.engine.performEditMeshOp('subsurf') },
+          { label: 'Loop Cut (Mid Z)', icon: Icons.toolLoopCut, shortcut: 'Ctrl+R', onClick: () => this.engine.performEditMeshOp('loop_cut') },
           {
-            label: '✂ Recortar / Fatiar Malha 3D...',
+            label: 'Recortar / Fatiar Malha 3D...',
+            icon: Icons.slice3d,
             onClick: () => this.promptSliceActiveMesh()
           },
           { separator: true },
-          { label: 'Deletar Faces Selecionadas', shortcut: 'X', onClick: () => this.engine.performEditMeshOp('delete_faces') }
+          {
+            label: 'Deletar Faces Selecionadas',
+            icon: Icons.trash,
+            danger: true,
+            shortcut: 'X',
+            onClick: () => this.engine.performEditMeshOp('delete_faces')
+          }
         ]);
       } else {
         openDropdownMenu(e.currentTarget as HTMLElement, this.buildObjectOperationsMenu());
@@ -709,7 +830,7 @@ export class EditorApp {
 
     this.vpHeaderEl.querySelector('#btn-snap')?.addEventListener('click', () => {
       st.snapEnabled = !st.snapEnabled;
-      showToast(st.snapEnabled ? 'Snap: ON (0.25m / 15°)' : 'Snap: OFF');
+      showToast(st.snapEnabled ? 'Snap: ON (0.25m / 15 deg)' : 'Snap: OFF');
       this.engine.notify();
     });
 
@@ -743,7 +864,8 @@ export class EditorApp {
     const targetObj = specificObj || this.engine.getActiveObject();
     const selCount = this.engine.state.selectedIds.length;
     const moveGroupItems: DropdownItem[] = this.engine.state.collections.map((c) => ({
-      label: `↳ Mover para "${c.name}"`,
+      label: `Mover para "${c.name}"`,
+      icon: Icons.folder,
       onClick: () => {
         const ids = specificObj
           ? [...new Set([...this.engine.state.selectedIds, specificObj.id])]
@@ -756,7 +878,8 @@ export class EditorApp {
     return [
       { sectionTitle: targetObj ? `Objeto: ${targetObj.name}` : 'Operações de Objeto' },
       {
-        label: '✎ Renomear...',
+        label: 'Renomear...',
+        icon: Icons.edit,
         shortcut: 'F2',
         onClick: () => {
           if (!targetObj) return;
@@ -772,7 +895,8 @@ export class EditorApp {
         }
       },
       {
-        label: '📋 Copiar (Copy)',
+        label: 'Copiar (Copy)',
+        icon: Icons.copy,
         shortcut: 'Ctrl+C',
         onClick: () => {
           if (specificObj && !this.engine.state.selectedIds.includes(specificObj.id)) {
@@ -783,7 +907,8 @@ export class EditorApp {
         }
       },
       {
-        label: '✂ Recortar (Cut p/ Clipboard)',
+        label: 'Recortar (Cut p/ Clipboard)',
+        icon: Icons.scissors,
         shortcut: 'Ctrl+X',
         onClick: () => {
           if (specificObj && !this.engine.state.selectedIds.includes(specificObj.id)) {
@@ -794,7 +919,8 @@ export class EditorApp {
         }
       },
       {
-        label: '📥 Colar (Paste)',
+        label: 'Colar (Paste)',
+        icon: Icons.paste,
         shortcut: 'Ctrl+V',
         onClick: () => {
           const p = this.engine.pasteClipboard();
@@ -803,51 +929,59 @@ export class EditorApp {
       },
       {
         label: 'Duplicar',
+        icon: Icons.copy,
         shortcut: 'Shift+D',
         onClick: () => this.engine.duplicateSelected()
       },
       { separator: true },
       { sectionTitle: 'Malha, União & Corte 3D' },
       {
-        label: `🔗 Unir Malhas Selecionadas (${selCount})`,
+        label: `Unir Malhas Selecionadas (${selCount})`,
+        icon: Icons.join,
         shortcut: 'Ctrl+J',
         onClick: () => {
           const res = this.engine.joinSelected();
           showToast(
             res
-              ? `Objetos unidos em "${res.name}"!`
-              : 'Selecione 2 ou mais objetos Mesh (toque no ⊕ no Explorer ou Shift+Clique) para unir!'
+              ? `Objetos unidos em "${res.name}"`
+              : 'Selecione 2 ou mais objetos Mesh no Explorer para unir.'
           );
         }
       },
       {
-        label: '🔪 Recortar / Fatiar Malha 3D...',
+        label: 'Recortar / Fatiar Malha 3D...',
+        icon: Icons.slice3d,
         onClick: () => this.promptSliceActiveMesh()
       },
       {
         label: 'Separar Partes Soltas',
+        icon: Icons.separate,
         onClick: () => {
           const parts = this.engine.separateSelectedByLooseParts();
-          showToast(parts.length > 1 ? `Separado em ${parts.length} partes!` : 'Nenhuma parte solta');
+          showToast(parts.length > 1 ? `Separado em ${parts.length} partes.` : 'Nenhuma parte solta');
         }
       },
       {
-        label: '🎨 Desenhar / Pintar Textura...',
+        label: 'Desenhar / Pintar Textura...',
+        icon: Icons.palette,
         onClick: () => openTextureStudioModal(this.engine, showToast)
       },
-      { label: 'Shade Smooth', onClick: () => this.engine.performEditMeshOp('shade_smooth') },
-      { label: 'Shade Flat', onClick: () => this.engine.performEditMeshOp('shade_flat') },
+      { label: 'Shade Smooth', icon: Icons.shadingSolid, onClick: () => this.engine.performEditMeshOp('shade_smooth') },
+      { label: 'Shade Flat', icon: Icons.cubeSmall, onClick: () => this.engine.performEditMeshOp('shade_flat') },
       { separator: true },
       { sectionTitle: 'Grupos / Coleções' },
       {
-        label: '📁 Colocar em Novo Grupo...',
+        label: 'Colocar em Novo Grupo...',
+        icon: Icons.folderPlus,
         shortcut: 'Ctrl+G',
         onClick: () => this.promptCreateGroup(true)
       },
       ...moveGroupItems,
       { separator: true },
       {
-        label: '🗑 Remover / Deletar',
+        label: 'Remover / Deletar',
+        icon: Icons.trash,
+        danger: true,
         shortcut: 'Del',
         onClick: () => {
           if (specificObj && !this.engine.state.selectedIds.includes(specificObj.id)) {
@@ -888,8 +1022,8 @@ export class EditorApp {
       const parts = this.engine.sliceActiveMesh(axis, mode, offset);
       showToast(
         mode === 'split'
-          ? `"${active.name}" dividido em ${parts.length} partes!`
-          : `Malha "${active.name}" recortada!`
+          ? `"${active.name}" dividido em ${parts.length} partes.`
+          : `Malha "${active.name}" recortada.`
       );
     });
   }
@@ -990,7 +1124,7 @@ export class EditorApp {
           <span class="obj-label">Scene Collection</span>
         </div>
         <div class="outliner-row-right">
-          <button type="button" class="outliner-mini-btn" id="outliner-paste-top" title="Colar (Paste)">📥</button>
+          <button type="button" class="outliner-mini-btn" id="outliner-paste-top" title="Colar (Paste)">${Icons.paste}</button>
         </div>
       </div>
     `;
@@ -1020,7 +1154,7 @@ export class EditorApp {
           <span class="obj-label">${escapeHtml(col.name)}</span>
         </div>
         <div class="outliner-row-right">
-          <button type="button" class="outliner-mini-btn" data-col-more title="Opções do Grupo">⋯</button>
+          <button type="button" class="outliner-mini-btn" data-col-more title="Opções do Grupo">${Icons.moreDots}</button>
           <button type="button" class="outliner-eye-btn ${col.visible ? '' : 'dimmed'}" data-col-eye title="Mostrar / Ocultar Grupo">
             ${col.visible ? Icons.eyeOpen : Icons.eyeClosed}
           </button>
@@ -1044,17 +1178,20 @@ export class EditorApp {
           { sectionTitle: `Grupo: ${col.name}` },
           {
             label: 'Selecionar Todos do Grupo',
+            icon: Icons.check,
             onClick: () => this.engine.selectCollectionObjects(col.name)
           },
           {
             label: 'Mover Objetos Selecionados p/ Este Grupo',
+            icon: Icons.folder,
             onClick: () => {
               this.engine.moveObjectsToCollection(st.selectedIds, col.name);
               showToast(`Movido para "${col.name}"`);
             }
           },
           {
-            label: '✎ Renomear Grupo...',
+            label: 'Renomear Grupo...',
+            icon: Icons.edit,
             onClick: () =>
               openTextPromptModal({
                 title: 'Renomear Grupo',
@@ -1066,10 +1203,13 @@ export class EditorApp {
           { separator: true },
           {
             label: 'Excluir Grupo (Manter Objetos)',
+            icon: Icons.folder,
             onClick: () => this.engine.deleteCollection(col.name, false)
           },
           {
-            label: '🗑 Excluir Grupo + Objetos Dentro',
+            label: 'Excluir Grupo + Objetos Dentro',
+            icon: Icons.trash,
+            danger: true,
             onClick: () => this.engine.deleteCollection(col.name, true)
           }
         ]);
@@ -1118,14 +1258,14 @@ export class EditorApp {
 
         row.innerHTML = `
           <div class="outliner-row-left">
-            <span style="opacity:0.55;font-size:9px;">▸</span>
+            <span style="opacity:0.55;display:inline-flex;align-items:center;">${Icons.chevronRight}</span>
             ${objIcon}
             <span class="obj-label">${escapeHtml(obj.name)}</span>
             ${dataBadge}
           </div>
           <div class="outliner-row-right">
-            <button type="button" class="outliner-mini-btn ${isSelected ? 'multi-on' : ''}" data-multi title="Selecionar junto (Multi-Seleção p/ Unir ou Agrupar)">⊕</button>
-            <button type="button" class="outliner-mini-btn" data-more title="Ações (Renomear, Grupo, Copiar, Unir, Recortar, Deletar)">⋯</button>
+            <button type="button" class="outliner-mini-btn ${isSelected ? 'multi-on' : ''}" data-multi title="Selecionar junto (Multi-Seleção p/ Unir ou Agrupar)">${Icons.multiAdd}</button>
+            <button type="button" class="outliner-mini-btn" data-more title="Ações (Renomear, Grupo, Copiar, Unir, Recortar, Deletar)">${Icons.moreDots}</button>
             <button type="button" class="outliner-eye-btn ${obj.visible ? '' : 'dimmed'}" data-eye title="Mostrar / Ocultar">
               ${obj.visible ? Icons.eyeOpen : Icons.eyeClosed}
             </button>
@@ -1189,9 +1329,10 @@ export class EditorApp {
     this.root.querySelector('#outliner-filter-btn')?.addEventListener('click', (e) => {
       openDropdownMenu(e.currentTarget as HTMLElement, [
         { sectionTitle: 'Explorer & Hierarquia' },
-        { label: '📁 Criar Novo Grupo...', onClick: () => this.promptCreateGroup(false) },
+        { label: 'Criar Novo Grupo...', icon: Icons.folderPlus, onClick: () => this.promptCreateGroup(false) },
         {
-          label: '📁 Agrupar Selecionados...',
+          label: 'Agrupar Selecionados...',
+          icon: Icons.folder,
           onClick: () => this.promptCreateGroup(true)
         },
         { separator: true },
@@ -1209,13 +1350,8 @@ export class EditorApp {
           const text = await file.text();
           const parsed = JSON.parse(text);
           if (parsed && Array.isArray(parsed.objects)) {
-            this.engine.state = {
-              ...this.engine.createStartupState(),
-              ...parsed
-            };
-            this.engine.rebuildSceneObjects();
-            this.engine.notify();
-            showToast(`Projeto "${file.name}" aberto!`);
+            this.engine.loadProjectState(parsed);
+            showToast(`Projeto "${file.name}" carregado.`);
           }
         }
         // 2. Image Texture applied directly onto active 3D object
@@ -1231,10 +1367,10 @@ export class EditorApp {
               r.readAsDataURL(file);
             });
             this.engine.applyTextureDataUrl(active.id, dataUrl, file.name);
-            showToast(`Textura "${file.name}" aplicada em ${active.name}!`);
+            showToast(`Textura "${file.name}" aplicada em ${active.name}.`);
           }
         }
-        // 3. Universal 3D Model Import (.obj, .fbx, .glb, .gltf, .dae, .stl, .ply, .3mf, .amf, .svg, .off, .rbxmx)
+        // 3. Universal 3D Model Import (.obj, .fbx, .glb, .gltf, .dae, .stl, .ply, .3mf, .amf, .svg, .off)
         else {
           showToast(`Importando ${file.name}...`);
           const importedList = await importAny3DFile(file);
@@ -1266,13 +1402,22 @@ export class EditorApp {
   }
 
   private bindKeyboardShortcuts(): void {
-    window.addEventListener('keydown', (e) => {
+    this.keydownHandler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
       const st = this.engine.state;
       const mod = e.ctrlKey || e.metaKey;
 
+      if (mod && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        if (this.activeProject && this.activeAccount) {
+          void this.persistProjectNow(true);
+        } else {
+          void this.handleExport('modix');
+        }
+        return;
+      }
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) this.engine.redo();
@@ -1356,22 +1501,8 @@ export class EditorApp {
       } else if (e.key.toLowerCase() === 'i' && st.mode === 'EDIT') {
         this.engine.performEditMeshOp('inset');
       }
-    });
-  }
-
-  private showSplash(): void {
-    openSplashModal({
-      onNewGeneral: () => this.resetScene(),
-      onNewSculpting: () => {
-        this.resetScene();
-        this.engine.deleteSelected();
-        this.engine.addPrimitive('uv_sphere');
-        this.switchWorkspace('Sculpting');
-      },
-      onImportModel: () => this.fileInputEl.click(),
-      onExportHub: () => this.openExportHub(),
-      onOpenAIAgent: () => this.aiPanel.open('agente')
-    });
+    };
+    window.addEventListener('keydown', this.keydownHandler);
   }
 
   private openExportHub(): void {
@@ -1385,10 +1516,12 @@ export class EditorApp {
   }
 
   private resetScene(): void {
+    const prevName = this.engine.state.sceneName;
     this.engine.state = this.engine.createStartupState();
+    this.engine.state.sceneName = prevName;
     this.engine.rebuildSceneObjects();
     this.engine.notify();
-    showToast('Nova cena Modix 3D iniciada');
+    showToast('Cena reiniciada.');
   }
 
   private triggerRenderModal(): void {
@@ -1404,25 +1537,30 @@ export class EditorApp {
   ): Promise<void> {
     try {
       const objs = this.engine.state.objects;
+      const baseSlug =
+        (this.engine.state.sceneName || 'modix-model')
+          .trim()
+          .replace(/[^a-zA-Z0-9_-]+/g, '_') || 'modix-model';
 
-      if (fmt === 'obj_roblox') {
+      if (fmt === 'obj') {
         const objText = exportSceneToOBJ(objs, {
-          yUpForRoblox: true,
+          yUp: true,
           scale: objOptions?.scale ?? 1,
           triangulate: true,
           combineMeshes: objOptions?.combineMeshes ?? false,
-          mtlFileName: 'modix-roblox.mtl'
+          mtlFileName: `${baseSlug}.mtl`
         });
-        const msg = await saveOrShareFile('modix-roblox.obj', objText, 'text/plain');
-        showToast(`${msg} (Roblox Studio Y-Up + UVs prontos!)`);
-      } else if (fmt === 'obj_blender') {
+        const msg = await saveOrShareFile(`${baseSlug}.obj`, objText, 'text/plain');
+        showToast(msg);
+      } else if (fmt === 'obj_zup') {
         const objText = exportSceneToOBJ(objs, {
-          yUpForRoblox: false,
-          scale: 1,
+          yUp: false,
+          scale: objOptions?.scale ?? 1,
           triangulate: false,
-          mtlFileName: 'modix-blender.mtl'
+          combineMeshes: objOptions?.combineMeshes ?? false,
+          mtlFileName: `${baseSlug}.mtl`
         });
-        const msg = await saveOrShareFile('modix-blender.obj', objText, 'text/plain');
+        const msg = await saveOrShareFile(`${baseSlug}-zup.obj`, objText, 'text/plain');
         showToast(msg);
       } else if (fmt === 'mtl') {
         const texMap = new Map<string, string>();
@@ -1432,7 +1570,7 @@ export class EditorApp {
           }
         }
         const mtlText = exportSceneToMTL(objs, texMap);
-        const msg = await saveOrShareFile('modix-roblox.mtl', mtlText, 'text/plain');
+        const msg = await saveOrShareFile(`${baseSlug}.mtl`, mtlText, 'text/plain');
         showToast(msg);
       } else if (fmt === 'tex_png') {
         const active =
@@ -1441,47 +1579,40 @@ export class EditorApp {
             : objs.find((o) => Boolean(o.material.textureDataUrl));
         if (active?.material.textureDataUrl) {
           const msg = await saveDataUrlPNG(
-            `${active.name}_RobloxTexture.png`,
+            `${active.name}_Texture.png`,
             active.material.textureDataUrl
           );
           showToast(msg);
         } else {
           showToast('Nenhuma textura encontrada na cena');
         }
-      } else if (fmt === 'rbxmx') {
-        const xml = exportSceneToRBXMX(objs);
-        const msg = await saveOrShareFile('modix-model.rbxmx', xml, 'application/xml');
-        showToast(msg);
       } else if (fmt === 'glb') {
-        const group = this.engine.getExportableThreeGroup();
-        const glb = await exportThreeGroupToGLB(group);
-        const msg = await saveOrShareFile('modix-model.glb', glb, 'model/gltf-binary');
+        const glb = await exportSceneToGLB(objs);
+        const msg = await saveOrShareFile(`${baseSlug}.glb`, glb, 'model/gltf-binary');
         showToast(msg);
       } else if (fmt === 'gltf') {
-        const group = this.engine.getExportableThreeGroup();
-        const gltf = await exportThreeGroupToGLTF(group);
-        const msg = await saveOrShareFile('modix-model.gltf', gltf, 'model/gltf+json');
+        const gltf = await exportSceneToGLTF(objs);
+        const msg = await saveOrShareFile(`${baseSlug}.gltf`, gltf, 'model/gltf+json');
         showToast(msg);
       } else if (fmt === 'stl') {
-        const stlText = exportSceneToSTL(objs);
-        const msg = await saveOrShareFile('modix-model.stl', stlText, 'model/stl');
+        const stlBin = exportSceneToBinarySTL(objs);
+        const msg = await saveOrShareFile(`${baseSlug}.stl`, stlBin, 'model/stl');
         showToast(msg);
       } else if (fmt === 'ply') {
         const plyText = exportSceneToPLY(objs);
-        const msg = await saveOrShareFile('modix-model.ply', plyText, 'text/plain');
+        const msg = await saveOrShareFile(`${baseSlug}.ply`, plyText, 'text/plain');
         showToast(msg);
       } else if (fmt === 'dae') {
         const daeXml = exportSceneToDAE(objs);
-        const msg = await saveOrShareFile('modix-model.dae', daeXml, 'model/vnd.collada+xml');
+        const msg = await saveOrShareFile(`${baseSlug}.dae`, daeXml, 'model/vnd.collada+xml');
         showToast(msg);
       } else if (fmt === 'usdz') {
-        const group = this.engine.getExportableThreeGroup();
-        const usdz = await exportThreeGroupToUSDZ(group);
-        const msg = await saveOrShareFile('modix-model.usdz', usdz, 'model/vnd.usdz+zip');
+        const usdz = await exportSceneToUSDZ(objs);
+        const msg = await saveOrShareFile(`${baseSlug}.usdz`, usdz, 'model/vnd.usdz+zip');
         showToast(msg);
       } else if (fmt === 'modix') {
         const json = serializeProject(this.engine.state);
-        const msg = await saveOrShareFile('scene.modix', json, 'application/json');
+        const msg = await saveOrShareFile(`${baseSlug}.modix`, json, 'application/json');
         showToast(msg);
       }
     } catch (err) {

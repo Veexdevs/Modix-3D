@@ -275,7 +275,7 @@ export class TimelinePanel {
       }
     }
 
-    // Draw active object keyframe diamonds ◆
+    // Draw active object keyframe diamonds
     const active = this.engine.getActiveObject();
     if (active) {
       for (const kf of active.keyframes) {

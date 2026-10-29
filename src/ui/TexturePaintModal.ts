@@ -4,6 +4,7 @@ import {
   generateProceduralTextureDataUrl,
   type ProceduralTexturePreset
 } from '../engine/TextureGenerator';
+import { Icons } from '../icons/blenderIcons';
 import type { UVProjectionMode } from '../types/scene';
 
 type StudioDrawTool = 'brush' | 'airbrush' | 'line' | 'rect' | 'circle' | 'fill' | 'eraser';
@@ -16,7 +17,7 @@ const QUICK_PALETTE = [
 ];
 
 const PRESET_LIST: Array<{ id: ProceduralTexturePreset; label: string }> = [
-  { id: 'studs', label: 'Roblox Studs' },
+  { id: 'studs', label: 'Relevo Tátil' },
   { id: 'checker', label: 'UV Grid' },
   { id: 'brick', label: 'Tijolos' },
   { id: 'wood', label: 'Madeira' },
@@ -69,11 +70,13 @@ export function openTextureStudioModal(
 
   card.innerHTML = `
     <div class="modix-modal-header">
-      <span>Estúdio de Texturas 2D &amp; 3D — <b>${escapeHtml(active.name)}</b> (512×512 PNG)</span>
+      <span style="display:flex;align-items:center;gap:6px;">
+        ${Icons.palette}<span>Estúdio de Texturas 2D &amp; 3D — <b>${escapeHtml(active.name)}</b> (512x512 PNG)</span>
+      </span>
       <div style="display:flex;gap:6px;align-items:center;">
-        <button class="modix-btn-sm" data-act="paint3d" title="Pintar direto no modelo 3D">Pintar em 3D</button>
-        <button class="modix-btn-sm primary" data-act="apply">Aplicar no 3D</button>
-        <button class="modix-modal-close" data-act="close">✕</button>
+        <button class="modix-btn-sm" data-act="paint3d" title="Pintar direto no modelo 3D">${Icons.brush}<span>Pintar em 3D</span></button>
+        <button class="modix-btn-sm primary" data-act="apply">${Icons.check}<span>Aplicar no 3D</span></button>
+        <button class="modix-modal-close" data-act="close">${Icons.close}</button>
       </div>
     </div>
 
@@ -82,13 +85,13 @@ export function openTextureStudioModal(
       <div class="modix-tex-col tools">
         <div class="modix-tex-sec-title">Ferramentas de Desenho</div>
         <div class="modix-tex-tool-grid" id="tex-tool-grid">
-          <button class="modix-tex-tool-btn active" data-tool="brush">✎ Pincel</button>
-          <button class="modix-tex-tool-btn" data-tool="airbrush">✺ Spray</button>
-          <button class="modix-tex-tool-btn" data-tool="line">╱ Linha</button>
-          <button class="modix-tex-tool-btn" data-tool="rect">▭ Retâng.</button>
-          <button class="modix-tex-tool-btn" data-tool="circle">◯ Círculo</button>
-          <button class="modix-tex-tool-btn" data-tool="fill">▣ Pintar Fundo</button>
-          <button class="modix-tex-tool-btn" data-tool="eraser">⌫ Borracha</button>
+          <button class="modix-tex-tool-btn active" data-tool="brush">${Icons.brush}<span>Pincel</span></button>
+          <button class="modix-tex-tool-btn" data-tool="airbrush">${Icons.spray}<span>Spray</span></button>
+          <button class="modix-tex-tool-btn" data-tool="line">${Icons.lineTool}<span>Linha</span></button>
+          <button class="modix-tex-tool-btn" data-tool="rect">${Icons.rectTool}<span>Retâng.</span></button>
+          <button class="modix-tex-tool-btn" data-tool="circle">${Icons.circleTool}<span>Círculo</span></button>
+          <button class="modix-tex-tool-btn" data-tool="fill">${Icons.fillBucket}<span>Fundo</span></button>
+          <button class="modix-tex-tool-btn" data-tool="eraser">${Icons.eraser}<span>Borracha</span></button>
         </div>
 
         <div class="modix-tex-row">
@@ -121,8 +124,8 @@ export function openTextureStudioModal(
         </div>
 
         <div class="modix-tex-row" style="margin-top:auto;">
-          <button class="modix-btn-sm" id="tex-undo" style="flex:1;">↶ Desfazer</button>
-          <button class="modix-btn-sm" id="tex-redo" style="flex:1;">↷ Refazer</button>
+          <button class="modix-btn-sm" id="tex-undo" style="flex:1;">${Icons.undo}<span>Desfazer</span></button>
+          <button class="modix-btn-sm" id="tex-redo" style="flex:1;">${Icons.redo}<span>Refazer</span></button>
         </div>
       </div>
 
@@ -141,7 +144,7 @@ export function openTextureStudioModal(
           ${PRESET_LIST.map((p) => `<button class="modix-tex-preset-btn" data-preset="${p.id}">${p.label}</button>`).join('')}
         </div>
 
-        <div class="modix-tex-sec-title">Projeção UV (Roblox / 3D)</div>
+        <div class="modix-tex-sec-title">Projeção UV 3D</div>
         <select id="tex-uv-mode" class="modix-select-dark">
           <option value="box" ${uvMode === 'box' ? 'selected' : ''}>Smart Box UV (Cubo/Geral)</option>
           <option value="planar" ${uvMode === 'planar' ? 'selected' : ''}>Planar Z (Topo/Chão)</option>
@@ -155,9 +158,9 @@ export function openTextureStudioModal(
         </div>
 
         <div class="modix-tex-sec-title">Arquivo de Textura</div>
-        <button class="modix-btn-sm" id="tex-import-img" style="width:100%;">📂 Importar Imagem (.png/.jpg/.svg)</button>
-        <button class="modix-btn-sm" id="tex-export-png" style="width:100%;">💾 Baixar Textura .PNG (Roblox)</button>
-        <button class="modix-btn-sm danger" id="tex-remove" style="width:100%;">✕ Remover Textura do Objeto</button>
+        <button class="modix-btn-sm" id="tex-import-img" style="width:100%;">${Icons.folderOpen}<span>Importar Imagem (.png/.jpg/.svg)</span></button>
+        <button class="modix-btn-sm" id="tex-export-png" style="width:100%;">${Icons.download}<span>Baixar Textura .PNG</span></button>
+        <button class="modix-btn-sm danger" id="tex-remove" style="width:100%;">${Icons.trash}<span>Remover Textura do Objeto</span></button>
       </div>
     </div>
   `;

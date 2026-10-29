@@ -25,7 +25,7 @@ import { openTextureStudioModal } from './TexturePaintModal';
 const PROP_TABS: Array<{ id: PropertiesTabId; icon: string; title: string }> = [
   { id: 'tool', icon: Icons.propTool, title: 'Active Tool and Workspace' },
   { id: 'render', icon: Icons.propRender, title: 'Render Properties' },
-  { id: 'output', icon: Icons.propOutput, title: 'Output & Export (Roblox .OBJ / .GLB)' },
+  { id: 'output', icon: Icons.propOutput, title: 'Output & Export (.OBJ / .GLB / .STL)' },
   { id: 'view_layer', icon: Icons.propViewLayer, title: 'View Layer Properties' },
   { id: 'scene', icon: Icons.propScene, title: 'Scene Properties' },
   { id: 'world', icon: Icons.propWorld, title: 'World Properties' },
@@ -254,7 +254,7 @@ export class PropertiesPanel {
     const keyBtn = document.createElement('button');
     keyBtn.type = 'button';
     keyBtn.className = `xf-key-dot ${opts.keyed ? 'keyed' : ''}`;
-    keyBtn.textContent = opts.keyed ? '◆' : '•';
+    keyBtn.innerHTML = opts.keyed ? Icons.keyframeDiamond : Icons.keyframeDot;
     keyBtn.title = 'Insert / Remove Keyframe';
     keyBtn.addEventListener('click', opts.onToggleKey);
 
@@ -384,7 +384,7 @@ export class PropertiesPanel {
           .map((m) => `<option value="${m}" ${active.rotationMode === m ? 'selected' : ''}>${m}</option>`)
           .join('')}
       </select>
-      <div class="xf-key-dot">•</div>
+      <div class="xf-key-dot">${Icons.keyframeDot}</div>
     `;
     modeRow.querySelector('select')?.addEventListener('change', (e) => {
       active.rotationMode = (e.target as HTMLSelectElement).value as RotationMode;
@@ -480,14 +480,14 @@ export class PropertiesPanel {
       opsBody.className = 'props-sec-content';
       opsBody.innerHTML = `
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
-          <button type="button" class="modix-btn" data-q="copy">📋 Copiar</button>
-          <button type="button" class="modix-btn" data-q="paste">📥 Colar</button>
-          <button type="button" class="modix-btn" data-q="cut">✂ Recortar (Clip)</button>
-          <button type="button" class="modix-btn" data-q="slice">🔪 Fatiar 3D</button>
-          <button type="button" class="modix-btn" data-q="join">🔗 Unir (${this.engine.state.selectedIds.length})</button>
-          <button type="button" class="modix-btn" data-q="group">📁 Novo Grupo</button>
-          <button type="button" class="modix-btn" data-q="tex">🎨 Textura 2D</button>
-          <button type="button" class="modix-btn danger" data-q="del">🗑 Deletar</button>
+          <button type="button" class="modix-btn" data-q="copy">${Icons.copy}<span>Copiar</span></button>
+          <button type="button" class="modix-btn" data-q="paste">${Icons.paste}<span>Colar</span></button>
+          <button type="button" class="modix-btn" data-q="cut">${Icons.scissors}<span>Recortar</span></button>
+          <button type="button" class="modix-btn" data-q="slice">${Icons.slice3d}<span>Fatiar 3D</span></button>
+          <button type="button" class="modix-btn" data-q="join">${Icons.join}<span>Unir (${this.engine.state.selectedIds.length})</span></button>
+          <button type="button" class="modix-btn" data-q="group">${Icons.folderPlus}<span>Novo Grupo</span></button>
+          <button type="button" class="modix-btn" data-q="tex">${Icons.palette}<span>Textura 2D</span></button>
+          <button type="button" class="modix-btn danger" data-q="del">${Icons.trash}<span>Deletar</span></button>
         </div>
       `;
       opsBody.querySelector('[data-q="copy"]')?.addEventListener('click', () => {
@@ -572,12 +572,12 @@ export class PropertiesPanel {
       item.style.cssText =
         'display:flex;align-items:center;justify-content:space-between;background:#1d1d1d;padding:4px 6px;border-radius:4px;gap:4px;';
       item.innerHTML = `
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📁 <b>${escapeHtml(col.name)}</b> (${count})</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;">${Icons.folder}<b>${escapeHtml(col.name)}</b> (${count})</span>
         <span style="display:flex;gap:3px;">
-          <button type="button" class="modix-btn" data-ren style="height:19px;padding:0 5px;font-size:10px;" title="Renomear Grupo">✎</button>
+          <button type="button" class="modix-btn" data-ren style="height:19px;padding:0 5px;" title="Renomear Grupo">${Icons.edit}</button>
           ${
             st.collections.length > 1
-              ? `<button type="button" class="modix-btn danger" data-del style="height:19px;padding:0 5px;font-size:10px;" title="Excluir Grupo">✕</button>`
+              ? `<button type="button" class="modix-btn danger" data-del style="height:19px;padding:0 5px;" title="Excluir Grupo">${Icons.close}</button>`
               : ''
           }
         </span>
@@ -655,14 +655,14 @@ export class PropertiesPanel {
             : `<div style="color:#9ca3af;font-size:10.5px;">Nenhuma textura aplicada ainda. Crie, importe ou desenhe abaixo!</div>`
         }
 
-        <button type="button" class="modix-btn primary" id="btn-open-tex-studio">🎨 Desenhar / Editar Textura 2D</button>
-        <button type="button" class="modix-btn" id="btn-paint-3d">🖌 Pintar Direto no Modelo 3D</button>
-        <button type="button" class="modix-btn" id="btn-import-tex">📂 Importar Imagem (.PNG / .JPG / .SVG)</button>
+        <button type="button" class="modix-btn primary" id="btn-open-tex-studio">${Icons.palette}<span>Desenhar / Editar Textura 2D</span></button>
+        <button type="button" class="modix-btn" id="btn-paint-3d">${Icons.brush}<span>Pintar Direto no Modelo 3D</span></button>
+        <button type="button" class="modix-btn" id="btn-import-tex">${Icons.folderOpen}<span>Importar Imagem (.PNG / .JPG / .SVG)</span></button>
 
         <div class="menu-sep"></div>
         <div style="font-size:10.5px;color:#bdbdbd;">Texturas Procedurais Instantâneas:</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
-          <button type="button" class="modix-btn" data-p="studs">Roblox Studs</button>
+          <button type="button" class="modix-btn" data-p="studs">Relevo Tátil</button>
           <button type="button" class="modix-btn" data-p="brick">Tijolos</button>
           <button type="button" class="modix-btn" data-p="wood">Madeira</button>
           <button type="button" class="modix-btn" data-p="metal">Metal</button>
@@ -687,8 +687,8 @@ export class PropertiesPanel {
         ${
           m.textureDataUrl
             ? `<div style="display:flex;gap:5px;">
-                <button type="button" class="modix-btn" id="btn-dl-tex" style="flex:1;">⬇ PNG Roblox</button>
-                <button type="button" class="modix-btn danger" id="btn-rm-tex">Remover</button>
+                <button type="button" class="modix-btn" id="btn-dl-tex" style="flex:1;">${Icons.download}<span>Baixar .PNG</span></button>
+                <button type="button" class="modix-btn danger" id="btn-rm-tex">${Icons.trash}<span>Remover</span></button>
                </div>`
             : ''
         }
@@ -831,7 +831,7 @@ export class PropertiesPanel {
           </span>
           <span style="display:flex;gap:4px;">
             <button type="button" class="modix-btn" data-apply style="height:18px;padding:0 5px;font-size:10px;">Apply</button>
-            <button type="button" class="modix-btn danger" data-del style="height:18px;padding:0 5px;font-size:10px;">✕</button>
+            <button type="button" class="modix-btn danger" data-del style="height:18px;padding:0 5px;">${Icons.close}</button>
           </span>
         </div>
         <div class="props-sec-content" data-body></div>
@@ -981,7 +981,7 @@ export class PropertiesPanel {
           <span>Alpha / Opacity (${m.opacity.toFixed(2)})</span>
           <input type="range" min="0.1" max="1" step="0.05" value="${m.opacity}" data-mat="alpha" style="width:95px;" />
         </label>
-        <button type="button" class="modix-btn primary" data-mat="texstudio">🎨 Estúdio de Texturas 2D / 3D</button>
+        <button type="button" class="modix-btn primary" data-mat="texstudio">${Icons.palette}<span>Estúdio de Texturas 2D / 3D</span></button>
         <button type="button" class="modix-btn" data-mat="preview">Ativar Material Preview</button>
       </div>
     `;
@@ -1052,10 +1052,10 @@ export class PropertiesPanel {
             <button type="button" class="modix-btn" data-op="shade_flat">Shade Flat</button>
           </div>
           <div class="menu-sep"></div>
-          <button type="button" class="modix-btn primary" id="mesh-slice-btn">✂ Recortar / Fatiar Malha 3D</button>
+          <button type="button" class="modix-btn primary" id="mesh-slice-btn">${Icons.slice3d}<span>Recortar / Fatiar Malha 3D</span></button>
           <div style="display:flex;gap:4px;">
-            <button type="button" class="modix-btn" id="mesh-join-btn" style="flex:1;">🔗 Unir Selecionados</button>
-            <button type="button" class="modix-btn" id="mesh-sep-btn" style="flex:1;">Separar Partes</button>
+            <button type="button" class="modix-btn" id="mesh-join-btn" style="flex:1;">${Icons.join}<span>Unir Selecionados</span></button>
+            <button type="button" class="modix-btn" id="mesh-sep-btn" style="flex:1;">${Icons.separate}<span>Separar Partes</span></button>
           </div>
         </div>
       `;
@@ -1141,16 +1141,16 @@ export class PropertiesPanel {
     const wrap = document.createElement('div');
     wrap.className = 'props-section';
     wrap.innerHTML = `
-      <div class="props-sec-hdr">${Icons.chevronDown}<span>Render &amp; Roblox / 3D Export</span></div>
+      <div class="props-sec-hdr">${Icons.chevronDown}<span>Renderização &amp; Exportação 3D</span></div>
       <div class="props-sec-content" style="display:flex;flex-direction:column;gap:6px;">
-        <button type="button" class="modix-btn primary" data-act="hub">🚀 Central de Exportação (Roblox .OBJ, .GLB, .RBXMX...)</button>
-        <button type="button" class="modix-btn" data-exp="obj_roblox">🎮 Exportar Rápido .OBJ (Roblox Studio)</button>
-        <button type="button" class="modix-btn" data-exp="glb">📦 Exportar .GLB (Com Texturas)</button>
-        <button type="button" class="modix-btn" data-exp="rbxmx">🧱 Exportar .RBXMX (Roblox Parts)</button>
-        <button type="button" class="modix-btn" data-exp="stl">🖨 Exportar .STL (3D Print)</button>
-        <button type="button" class="modix-btn" data-exp="modix">💾 Salvar Projeto (.MODIX)</button>
+        <button type="button" class="modix-btn primary" data-act="hub">${Icons.download}<span>Central de Exportação (.OBJ, .GLB, .USDZ, .STL...)</span></button>
+        <button type="button" class="modix-btn" data-exp="obj">${Icons.file3d}<span>Exportar Wavefront (.OBJ + UVs)</span></button>
+        <button type="button" class="modix-btn" data-exp="glb">${Icons.file3d}<span>Exportar glTF Binário (.GLB + PBR)</span></button>
+        <button type="button" class="modix-btn" data-exp="usdz">${Icons.cubeSmall}<span>Exportar Universal Scene (.USDZ)</span></button>
+        <button type="button" class="modix-btn" data-exp="stl">${Icons.cubeSmall}<span>Exportar Stereolithography (.STL)</span></button>
+        <button type="button" class="modix-btn" data-exp="modix">${Icons.save}<span>Exportar Arquivo (.MODIX)</span></button>
         <div class="menu-sep"></div>
-        <button type="button" class="modix-btn" data-act="render">📸 Renderizar Imagem (1280×720 PNG)</button>
+        <button type="button" class="modix-btn" data-act="render">${Icons.cameraPhoto}<span>Renderizar Imagem (1280 x 720 PNG)</span></button>
       </div>
     `;
     wrap.querySelector('[data-act="hub"]')?.addEventListener('click', () => this.onOpenExportHub());
@@ -1232,7 +1232,7 @@ export class PropertiesPanel {
         <div>Groups / Collections: <strong>${this.engine.state.collections.length}</strong></div>
         <div>Objects: <strong>${this.engine.state.objects.length}</strong></div>
         <div>Vertices: <strong>${stats.verts}</strong> | Faces: <strong>${stats.faces}</strong></div>
-        <div>Units: <strong>Metric (Meters / Roblox Studs)</strong></div>
+        <div>Units: <strong>Metric (Meters)</strong></div>
       </div>
     `;
     this.inspectorEl.appendChild(wrap);

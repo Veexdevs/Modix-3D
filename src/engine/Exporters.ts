@@ -16,19 +16,19 @@ import {
   computeFaceNormal,
   computeMeshBounds,
   computeProjectedUV,
-  createPrimitiveMesh,
+  computeVertexNormals,
   evaluateMeshWithModifiers,
   threeGeometryToEditableMesh
 } from './MeshOperations';
 
 export interface OBJExportOptions {
-  /** Convert Z-up (Modix/Blender) -> Y-up (Roblox Studio, Unity, Maya) with Rx(-90deg) */
-  yUpForRoblox?: boolean;
-  /** Uniform scale multiplier (e.g., 1 = 1 stud/m, 4 = large Roblox prop) */
+  /** Convert Z-up internal coordinates -> standard right-handed Y-up (default: true) */
+  yUp?: boolean;
+  /** Uniform scale multiplier */
   scale?: number;
-  /** Triangulate all quads/n-gons for strict game-engine importers like Roblox Studio */
+  /** Triangulate all quads/n-gons for universal 3D importer compatibility (default: true) */
   triangulate?: boolean;
-  /** Merge all visible meshes into one single MeshPart object if true */
+  /** Merge all visible meshes into one combined mesh object if true */
   combineMeshes?: boolean;
   /** Base filename for mtllib header */
   mtlFileName?: string;
@@ -53,20 +53,19 @@ function hexToRgb01(hex: string): [number, number, number] {
 }
 
 /**
- * Exports scene objects to Wavefront .OBJ with full UV coordinates (vt),
- * outward vertex/face normals (vn), materials (usemtl), and optional Y-up conversion
- * specifically engineered for 100% compatibility with Roblox Studio MeshPart importer.
+ * Exports scene objects to universal Wavefront .OBJ with full UV coordinates (vt),
+ * outward vertex/face normals (vn), materials (usemtl), and standard right-handed Y-up orientation.
  */
 export function exportSceneToOBJ(objects: SceneObjectData[], opts: OBJExportOptions = {}): string {
-  const yUp = opts.yUpForRoblox !== false; // default true for Roblox Studio & standard game engines
+  const yUp = opts.yUp !== false;
   const scale = opts.scale ?? 1;
   const triangulate = opts.triangulate !== false;
   const combine = opts.combineMeshes ?? false;
-  const mtlName = opts.mtlFileName || 'modix_export.mtl';
+  const mtlName = opts.mtlFileName || 'modix-export.mtl';
 
   const lines: string[] = [
-    '# Modix 3D OBJ Export (Roblox Studio & Blender Ready)',
-    '# Coordinate System: ' + (yUp ? 'Y-Up Right-Handed (Roblox Studio)' : 'Z-Up Right-Handed (Blender)'),
+    '# Modix 3D Wavefront OBJ Export',
+    '# Coordinate System: ' + (yUp ? 'Y-Up Right-Handed' : 'Z-Up Right-Handed'),
     `mtllib ${mtlName}`,
     ''
   ];
@@ -83,7 +82,7 @@ export function exportSceneToOBJ(objects: SceneObjectData[], opts: OBJExportOpti
 
   const mapPoint = (x: number, y: number, z: number): [number, number, number] => {
     if (yUp) {
-      // Rx(-90 deg): (x, y, z)_Zup -> (x, z, -y)_Yup, det = +1 (preserves CCW winding!)
+      // Rx(-90 deg): (x, y, z)_Zup -> (x, z, -y)_Yup, det = +1 (preserves CCW outward winding)
       return [x * scale, z * scale, -y * scale];
     }
     return [x * scale, y * scale, z * scale];
@@ -123,18 +122,31 @@ export function exportSceneToOBJ(objects: SceneObjectData[], opts: OBJExportOpti
       lines.push(`v ${wx.toFixed(6)} ${wy.toFixed(6)} ${wz.toFixed(6)}`);
     }
 
+    const smoothNormals = evaluated.shadeSmooth
+      ? computeVertexNormals({ vertices: worldVerts, faces: evaluated.faces, shadeSmooth: true })
+      : null;
+
+    let smoothVnBase = vnOffset;
+    if (smoothNormals) {
+      for (const [nx, ny, nz] of smoothNormals) {
+        lines.push(`vn ${nx.toFixed(6)} ${ny.toFixed(6)} ${nz.toFixed(6)}`);
+        vnOffset++;
+      }
+    }
+
     for (const f of evaluated.faces) {
       if (f.length < 3) continue;
       const localNormal = computeFaceNormal(evaluated.vertices, f);
-      const worldNormal = computeFaceNormal(worldVerts, f);
-      // Ensure non-zero normal
-      const nLen = Math.hypot(worldNormal[0], worldNormal[1], worldNormal[2]);
-      const [nx, ny, nz] =
-        nLen > 1e-7 ? worldNormal : mapDir(localNormal[0], localNormal[1], localNormal[2]);
-      lines.push(`vn ${nx.toFixed(6)} ${ny.toFixed(6)} ${nz.toFixed(6)}`);
-      const thisVn = vnOffset++;
+      let flatVn = 0;
+      if (!smoothNormals) {
+        const worldNormal = computeFaceNormal(worldVerts, f);
+        const nLen = Math.hypot(worldNormal[0], worldNormal[1], worldNormal[2]);
+        const [nx, ny, nz] =
+          nLen > 1e-7 ? worldNormal : mapDir(localNormal[0], localNormal[1], localNormal[2]);
+        lines.push(`vn ${nx.toFixed(6)} ${ny.toFixed(6)} ${nz.toFixed(6)}`);
+        flatVn = vnOffset++;
+      }
 
-      // Emit per-corner UVs for clean seam-free box/planar/spherical mapping
       const cornerVts: number[] = [];
       for (const vi of f) {
         const lv = evaluated.vertices[vi] || [0, 0, 0];
@@ -145,20 +157,30 @@ export function exportSceneToOBJ(objects: SceneObjectData[], opts: OBJExportOpti
 
       if (triangulate) {
         for (let i = 1; i < f.length - 1; i++) {
-          const i0 = f[0] + vOffset;
-          const i1 = f[i] + vOffset;
-          const i2 = f[i + 1] + vOffset;
+          const idx0 = f[0];
+          const idx1 = f[i];
+          const idx2 = f[i + 1];
+          const v0i = idx0 + vOffset;
+          const v1i = idx1 + vOffset;
+          const v2i = idx2 + vOffset;
           const t0 = cornerVts[0];
           const t1 = cornerVts[i];
           const t2 = cornerVts[i + 1];
-          lines.push(`f ${i0}/${t0}/${thisVn} ${i1}/${t1}/${thisVn} ${i2}/${t2}/${thisVn}`);
+          const n0 = smoothNormals ? smoothVnBase + idx0 : flatVn;
+          const n1 = smoothNormals ? smoothVnBase + idx1 : flatVn;
+          const n2 = smoothNormals ? smoothVnBase + idx2 : flatVn;
+          lines.push(`f ${v0i}/${t0}/${n0} ${v1i}/${t1}/${n1} ${v2i}/${t2}/${n2}`);
         }
       } else {
-        const tokens = f.map((vi, idx) => `${vi + vOffset}/${cornerVts[idx]}/${thisVn}`);
+        const tokens = f.map((vi, idx) => {
+          const nIdx = smoothNormals ? smoothVnBase + vi : flatVn;
+          return `${vi + vOffset}/${cornerVts[idx]}/${nIdx}`;
+        });
         lines.push(`f ${tokens.join(' ')}`);
       }
     }
 
+    void smoothVnBase;
     vOffset += evaluated.vertices.length;
     lines.push('');
   }
@@ -170,11 +192,7 @@ export function exportSceneToMTL(
   objects: SceneObjectData[],
   textureFileMap?: Map<string, string>
 ): string {
-  const lines: string[] = [
-    '# Modix 3D Material Library (.mtl)',
-    '# Compatible with Roblox Studio & Blender',
-    ''
-  ];
+  const lines: string[] = ['# Modix 3D Material Library (.mtl)', ''];
   const seen = new Set<string>();
   for (const obj of objects) {
     if (obj.kind !== 'MESH' || !obj.mesh || !obj.visible) continue;
@@ -190,7 +208,7 @@ export function exportSceneToMTL(
     lines.push(`newmtl Mat_${safeName}`);
     lines.push(`Ka ${(r * 0.2).toFixed(4)} ${(g * 0.2).toFixed(4)} ${(b * 0.2).toFixed(4)}`);
     lines.push(`Kd ${r.toFixed(4)} ${g.toFixed(4)} ${b.toFixed(4)}`);
-    lines.push(`Ks 0.2500 0.2500 0.2500`);
+    lines.push('Ks 0.2500 0.2500 0.2500');
     if ((obj.material.emissionStrength ?? 0) > 0) {
       const es = Math.min(1, obj.material.emissionStrength);
       lines.push(`Ke ${(er * es).toFixed(4)} ${(eg * es).toFixed(4)} ${(eb * es).toFixed(4)}`);
@@ -205,6 +223,64 @@ export function exportSceneToMTL(
     lines.push('');
   }
   return lines.join('\n');
+}
+
+/** Exports watertight Binary STL (standard Z-up CAD / 3D Slicer format) */
+export function exportSceneToBinarySTL(objects: SceneObjectData[]): ArrayBuffer {
+  const triangles: {
+    n: [number, number, number];
+    a: [number, number, number];
+    b: [number, number, number];
+    c: [number, number, number];
+  }[] = [];
+  const v0 = new THREE.Vector3();
+
+  for (const obj of objects) {
+    if (obj.kind !== 'MESH' || !obj.mesh || !obj.visible) continue;
+    const evaluated = evaluateMeshWithModifiers(obj.mesh, obj.modifiers);
+    const mat = composeObjectMatrix(obj);
+    const transformed: [number, number, number][] = evaluated.vertices.map(([x, y, z]) => {
+      v0.set(x, y, z).applyMatrix4(mat);
+      return [v0.x, v0.y, v0.z];
+    });
+
+    for (const f of evaluated.faces) {
+      if (f.length < 3) continue;
+      for (let i = 1; i < f.length - 1; i++) {
+        const a = transformed[f[0]];
+        const b = transformed[f[i]];
+        const c = transformed[f[i + 1]];
+        const n = computeFaceNormal([a, b, c], [0, 1, 2]);
+        triangles.push({ n, a, b, c });
+      }
+    }
+  }
+
+  const buffer = new ArrayBuffer(84 + triangles.length * 50);
+  const dv = new DataView(buffer);
+  const header = 'Modix 3D Binary STL Export';
+  for (let i = 0; i < 80; i++) {
+    dv.setUint8(i, i < header.length ? header.charCodeAt(i) : 0);
+  }
+  dv.setUint32(80, triangles.length, true);
+
+  let offset = 84;
+  for (const t of triangles) {
+    dv.setFloat32(offset, t.n[0], true);
+    dv.setFloat32(offset + 4, t.n[1], true);
+    dv.setFloat32(offset + 8, t.n[2], true);
+    offset += 12;
+    for (const pt of [t.a, t.b, t.c]) {
+      dv.setFloat32(offset, pt[0], true);
+      dv.setFloat32(offset + 4, pt[1], true);
+      dv.setFloat32(offset + 8, pt[2], true);
+      offset += 12;
+    }
+    dv.setUint16(offset, 0, true);
+    offset += 2;
+  }
+
+  return buffer;
 }
 
 export function exportSceneToSTL(objects: SceneObjectData[]): string {
@@ -222,11 +298,11 @@ export function exportSceneToSTL(objects: SceneObjectData[]): string {
 
     for (const f of evaluated.faces) {
       if (f.length < 3) continue;
-      const n = computeFaceNormal(transformed, f);
       for (let i = 1; i < f.length - 1; i++) {
         const a = transformed[f[0]];
         const b = transformed[f[i]];
         const c = transformed[f[i + 1]];
+        const n = computeFaceNormal([a, b, c], [0, 1, 2]);
         lines.push(`  facet normal ${n[0].toFixed(6)} ${n[1].toFixed(6)} ${n[2].toFixed(6)}`);
         lines.push('    outer loop');
         lines.push(`      vertex ${a[0].toFixed(6)} ${a[1].toFixed(6)} ${a[2].toFixed(6)}`);
@@ -241,26 +317,71 @@ export function exportSceneToSTL(objects: SceneObjectData[]): string {
   return lines.join('\n');
 }
 
+/** Exports Stanford Polygon (.PLY) with Y-up coordinates, unit normals, UVs, and RGB vertex colors */
 export function exportSceneToPLY(objects: SceneObjectData[]): string {
-  const verts: { x: number; y: number; z: number; r: number; g: number; b: number }[] = [];
+  const verts: {
+    x: number;
+    y: number;
+    z: number;
+    nx: number;
+    ny: number;
+    nz: number;
+    s: number;
+    t: number;
+    r: number;
+    g: number;
+    b: number;
+  }[] = [];
   const tris: [number, number, number][] = [];
   const v0 = new THREE.Vector3();
 
   for (const obj of objects) {
     if (obj.kind !== 'MESH' || !obj.mesh || !obj.visible) continue;
     const evaluated = evaluateMeshWithModifiers(obj.mesh, obj.modifiers);
+    if (evaluated.vertices.length === 0 || evaluated.faces.length === 0) continue;
+
     const mat = composeObjectMatrix(obj);
     const [cr, cg, cb] = hexToRgb01(obj.material.baseColor || '#cccccc');
-    const r = Math.round(cr * 255);
-    const g = Math.round(cg * 255);
-    const b = Math.round(cb * 255);
-    const baseOffset = verts.length;
+    const localBounds = computeMeshBounds(evaluated);
+    const projMode = obj.material.uvProjection ?? 'box';
+    const repX = obj.material.repeatX ?? 1;
+    const repY = obj.material.repeatY ?? 1;
+    const hasVC = Boolean(
+      evaluated.vertexColors && evaluated.vertexColors.length === evaluated.vertices.length
+    );
 
-    for (const [x, y, z] of evaluated.vertices) {
-      v0.set(x, y, z).applyMatrix4(mat);
-      // Y-up conversion
-      verts.push({ x: v0.x, y: v0.z, z: -v0.y, r, g, b });
-    }
+    const worldYUp: [number, number, number][] = evaluated.vertices.map(([lx, ly, lz]) => {
+      v0.set(lx, ly, lz).applyMatrix4(mat);
+      return [v0.x, v0.z, -v0.y];
+    });
+    const vNormals = computeVertexNormals({
+      vertices: worldYUp,
+      faces: evaluated.faces,
+      shadeSmooth: true
+    });
+    const localNormals = computeVertexNormals(evaluated);
+
+    const baseOffset = verts.length;
+    evaluated.vertices.forEach((lv, idx) => {
+      const [wx, wy, wz] = worldYUp[idx];
+      const [nx, ny, nz] = vNormals[idx];
+      const [u, v] = computeProjectedUV(lv, localNormals[idx], localBounds, projMode, repX, repY);
+      const vc = hasVC ? evaluated.vertexColors![idx] : [1, 1, 1];
+      verts.push({
+        x: wx,
+        y: wy,
+        z: wz,
+        nx,
+        ny,
+        nz,
+        s: u,
+        t: v,
+        r: Math.max(0, Math.min(255, Math.round(cr * vc[0] * 255))),
+        g: Math.max(0, Math.min(255, Math.round(cg * vc[1] * 255))),
+        b: Math.max(0, Math.min(255, Math.round(cb * vc[2] * 255)))
+      });
+    });
+
     for (const f of evaluated.faces) {
       if (f.length < 3) continue;
       for (let i = 1; i < f.length - 1; i++) {
@@ -277,6 +398,11 @@ export function exportSceneToPLY(objects: SceneObjectData[]): string {
     'property float x',
     'property float y',
     'property float z',
+    'property float nx',
+    'property float ny',
+    'property float nz',
+    'property float s',
+    'property float t',
     'property uchar red',
     'property uchar green',
     'property uchar blue',
@@ -286,7 +412,9 @@ export function exportSceneToPLY(objects: SceneObjectData[]): string {
   ];
 
   for (const v of verts) {
-    lines.push(`${v.x.toFixed(5)} ${v.y.toFixed(5)} ${v.z.toFixed(5)} ${v.r} ${v.g} ${v.b}`);
+    lines.push(
+      `${v.x.toFixed(5)} ${v.y.toFixed(5)} ${v.z.toFixed(5)} ${v.nx.toFixed(5)} ${v.ny.toFixed(5)} ${v.nz.toFixed(5)} ${v.s.toFixed(5)} ${v.t.toFixed(5)} ${v.r} ${v.g} ${v.b}`
+    );
   }
   for (const [a, b, c] of tris) {
     lines.push(`3 ${a} ${b} ${c}`);
@@ -294,6 +422,7 @@ export function exportSceneToPLY(objects: SceneObjectData[]): string {
   return lines.join('\n');
 }
 
+/** Exports COLLADA 1.4.1 (.DAE) with Y_UP axis, positions, normals, UVs, and Phong materials */
 export function exportSceneToDAE(objects: SceneObjectData[]): string {
   const geomXml: string[] = [];
   const nodeXml: string[] = [];
@@ -312,19 +441,43 @@ export function exportSceneToDAE(objects: SceneObjectData[]): string {
     const fxId = `fx_${id}`;
     const mat = composeObjectMatrix(obj);
     const [r, g, b] = hexToRgb01(obj.material.baseColor);
+    const localBounds = computeMeshBounds(evaluated);
+    const projMode = obj.material.uvProjection ?? 'box';
+    const repX = obj.material.repeatX ?? 1;
+    const repY = obj.material.repeatY ?? 1;
+
+    const worldYUp: [number, number, number][] = evaluated.vertices.map(([lx, ly, lz]) => {
+      v0.set(lx, ly, lz).applyMatrix4(mat);
+      return [v0.x, v0.z, -v0.y];
+    });
+    const worldNormals = computeVertexNormals({
+      vertices: worldYUp,
+      faces: evaluated.faces,
+      shadeSmooth: Boolean(evaluated.shadeSmooth)
+    });
+    const localNormals = computeVertexNormals(evaluated);
 
     const posFloats: string[] = [];
-    for (const [x, y, z] of evaluated.vertices) {
-      v0.set(x, y, z).applyMatrix4(mat);
-      posFloats.push(v0.x.toFixed(5), v0.y.toFixed(5), v0.z.toFixed(5));
-    }
+    const normFloats: string[] = [];
+    const uvFloats: string[] = [];
 
-    const triIndices: number[] = [];
+    evaluated.vertices.forEach((lv, idx) => {
+      const [wx, wy, wz] = worldYUp[idx];
+      const [nx, ny, nz] = worldNormals[idx];
+      const [u, w] = computeProjectedUV(lv, localNormals[idx], localBounds, projMode, repX, repY);
+      posFloats.push(wx.toFixed(5), wy.toFixed(5), wz.toFixed(5));
+      normFloats.push(nx.toFixed(5), ny.toFixed(5), nz.toFixed(5));
+      uvFloats.push(u.toFixed(5), w.toFixed(5));
+    });
+
+    const pIndices: number[] = [];
     let triCount = 0;
     for (const f of evaluated.faces) {
       if (f.length < 3) continue;
       for (let i = 1; i < f.length - 1; i++) {
-        triIndices.push(f[0], f[i], f[i + 1]);
+        for (const vi of [f[0], f[i], f[i + 1]]) {
+          pIndices.push(vi, vi, vi);
+        }
         triCount++;
       }
     }
@@ -356,12 +509,30 @@ export function exportSceneToDAE(objects: SceneObjectData[]): string {
             </accessor>
           </technique_common>
         </source>
+        <source id="${id}_normals">
+          <float_array id="${id}_norm_arr" count="${normFloats.length}">${normFloats.join(' ')}</float_array>
+          <technique_common>
+            <accessor source="#${id}_norm_arr" count="${evaluated.vertices.length}" stride="3">
+              <param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/>
+            </accessor>
+          </technique_common>
+        </source>
+        <source id="${id}_uvs">
+          <float_array id="${id}_uv_arr" count="${uvFloats.length}">${uvFloats.join(' ')}</float_array>
+          <technique_common>
+            <accessor source="#${id}_uv_arr" count="${evaluated.vertices.length}" stride="2">
+              <param name="S" type="float"/><param name="T" type="float"/>
+            </accessor>
+          </technique_common>
+        </source>
         <vertices id="${id}_verts">
           <input semantic="POSITION" source="#${id}_positions"/>
         </vertices>
         <triangles material="${matId}" count="${triCount}">
           <input semantic="VERTEX" source="#${id}_verts" offset="0"/>
-          <p>${triIndices.join(' ')}</p>
+          <input semantic="NORMAL" source="#${id}_normals" offset="1"/>
+          <input semantic="TEXCOORD" source="#${id}_uvs" offset="2" set="0"/>
+          <p>${pIndices.join(' ')}</p>
         </triangles>
       </mesh>
     </geometry>`);
@@ -382,7 +553,7 @@ export function exportSceneToDAE(objects: SceneObjectData[]): string {
 <COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
   <asset>
     <contributor><authoring_tool>Modix 3D</authoring_tool></contributor>
-    <up_axis>Z_UP</up_axis>
+    <up_axis>Y_UP</up_axis>
   </asset>
   <library_effects>${effectXml.join('')}</library_effects>
   <library_materials>${matXml.join('')}</library_materials>
@@ -395,154 +566,202 @@ export function exportSceneToDAE(objects: SceneObjectData[]): string {
 </COLLADA>`;
 }
 
+async function loadDataUrlAsCanvasTexture(
+  dataUrl: string,
+  repeatX = 1,
+  repeatY = 1
+): Promise<THREE.CanvasTexture | null> {
+  if (typeof document === 'undefined' || typeof Image === 'undefined') return null;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width || 512;
+      canvas.height = img.height || 512;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(null);
+        return;
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(repeatX, repeatY);
+      tex.needsUpdate = true;
+      resolve(tex);
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
 /**
- * Exports scene objects into a native Roblox Studio XML Model (.rbxmx) using Parts/WedgeParts!
+ * Builds a clean, spec-compliant Y-Up PBR THREE.Scene directly from SceneObjectData[]
+ * (independent of current viewport shading mode, so GLB, GLTF, and USDZ always carry
+ * proper MeshStandardMaterial + embedded textures + normals + UVs).
  */
-export function exportSceneToRBXMX(objects: SceneObjectData[]): string {
-  const itemsXml: string[] = [];
-  let refIdx = 1;
+export async function buildPbrSceneFromObjects(
+  objects: SceneObjectData[],
+  forUsdz = false
+): Promise<{ scene: THREE.Scene; dispose: () => void }> {
+  const scene = new THREE.Scene();
+  scene.name = 'ModixScene';
+  const disposables: { dispose: () => void }[] = [];
+  const v0 = new THREE.Vector3();
 
   for (const obj of objects) {
     if (obj.kind !== 'MESH' || !obj.mesh || !obj.visible) continue;
     const evaluated = evaluateMeshWithModifiers(obj.mesh, obj.modifiers);
-    const bounds = computeMeshBounds(evaluated);
+    if (evaluated.vertices.length === 0 || evaluated.faces.length === 0) continue;
 
-    const sx = Math.max(0.2, bounds.span[0] * Math.abs(obj.scale[0] * obj.deltaScale[0]));
-    const sy = Math.max(0.2, bounds.span[2] * Math.abs(obj.scale[2] * obj.deltaScale[2])); // Z-up -> Roblox Y-up
-    const sz = Math.max(0.2, bounds.span[1] * Math.abs(obj.scale[1] * obj.deltaScale[1]));
+    const mat4 = composeObjectMatrix(obj);
+    const localBounds = computeMeshBounds(evaluated);
+    const projMode = obj.material.uvProjection ?? 'box';
+    const repX = obj.material.repeatX ?? 1;
+    const repY = obj.material.repeatY ?? 1;
+    const hasVC =
+      !forUsdz &&
+      Boolean(evaluated.vertexColors && evaluated.vertexColors.length === evaluated.vertices.length);
 
-    const px = obj.location[0] + obj.deltaLocation[0];
-    const py = obj.location[2] + obj.deltaLocation[2];
-    const pz = -(obj.location[1] + obj.deltaLocation[1]);
+    const worldYUp: [number, number, number][] = evaluated.vertices.map(([lx, ly, lz]) => {
+      v0.set(lx, ly, lz).applyMatrix4(mat4);
+      // Z-up (x, y, z) -> Y-up (x, z, -y)
+      return [v0.x, v0.z, -v0.y];
+    });
 
-    const euler = new THREE.Euler(
-      THREE.MathUtils.degToRad(obj.rotationDeg[0] + obj.deltaRotationDeg[0]),
-      THREE.MathUtils.degToRad(obj.rotationDeg[2] + obj.deltaRotationDeg[2]),
-      THREE.MathUtils.degToRad(-(obj.rotationDeg[1] + obj.deltaRotationDeg[1])),
-      'XYZ'
-    );
-    const m = new THREE.Matrix4().makeRotationFromEuler(euler);
-    const e = m.elements; // column-major
+    const smoothNormals = evaluated.shadeSmooth
+      ? computeVertexNormals({ vertices: worldYUp, faces: evaluated.faces, shadeSmooth: true })
+      : null;
 
-    const [r, g, b] = hexToRgb01(obj.material.baseColor);
-    const colorUint =
-      (0xff << 24) |
-      ((Math.round(r * 255) & 255) << 16) |
-      ((Math.round(g * 255) & 255) << 8) |
-      (Math.round(b * 255) & 255);
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const uvs: number[] = [];
+    const colors: number[] = [];
 
-    const isWedge = obj.primitive === 'wedge';
-    const className = isWedge ? 'WedgePart' : 'Part';
-    const shapeToken =
-      obj.primitive === 'uv_sphere' || obj.primitive === 'ico_sphere'
-        ? 0 // Ball
-        : obj.primitive === 'cylinder'
-          ? 2 // Cylinder
-          : 1; // Block
+    for (const f of evaluated.faces) {
+      if (f.length < 3) continue;
+      const localFn = computeFaceNormal(evaluated.vertices, f);
+      const worldFn = computeFaceNormal(worldYUp, f);
+      for (let i = 1; i < f.length - 1; i++) {
+        for (const vi of [f[0], f[i], f[i + 1]]) {
+          const wv = worldYUp[vi] || [0, 0, 0];
+          const lv = evaluated.vertices[vi] || [0, 0, 0];
+          const wn = smoothNormals ? smoothNormals[vi] : worldFn;
+          const [u, w] = computeProjectedUV(lv, localFn, localBounds, projMode, repX, repY);
+          positions.push(wv[0], wv[1], wv[2]);
+          normals.push(wn[0], wn[1], wn[2]);
+          uvs.push(u, w);
+          if (hasVC) {
+            const vc = evaluated.vertexColors![vi];
+            colors.push(vc[0], vc[1], vc[2]);
+          }
+        }
+      }
+    }
 
-    itemsXml.push(`
-    <Item class="${className}" referent="RBXMODIX${refIdx++}">
-      <Properties>
-        <string name="Name">${sanitizeObjName(obj.name)}</string>
-        <bool name="Anchored">true</bool>
-        <Color3uint8 name="Color3uint8">${colorUint >>> 0}</Color3uint8>
-        <float name="Transparency">${(1 - (obj.material.opacity ?? 1)).toFixed(3)}</float>
-        ${!isWedge ? `<token name="shape">${shapeToken}</token>` : ''}
-        <Vector3 name="size">
-          <X>${sx.toFixed(4)}</X>
-          <Y>${sy.toFixed(4)}</Y>
-          <Z>${sz.toFixed(4)}</Z>
-        </Vector3>
-        <CoordinateFrame name="CFrame">
-          <X>${px.toFixed(4)}</X>
-          <Y>${py.toFixed(4)}</Y>
-          <Z>${pz.toFixed(4)}</Z>
-          <R00>${e[0].toFixed(5)}</R00><R01>${e[4].toFixed(5)}</R01><R02>${e[8].toFixed(5)}</R02>
-          <R10>${e[1].toFixed(5)}</R10><R11>${e[5].toFixed(5)}</R11><R12>${e[9].toFixed(5)}</R12>
-          <R20>${e[2].toFixed(5)}</R20><R21>${e[6].toFixed(5)}</R21><R22>${e[10].toFixed(5)}</R22>
-        </CoordinateFrame>
-      </Properties>
-    </Item>`);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    if (hasVC) {
+      geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    }
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    disposables.push(geometry);
+
+    let mapTex: THREE.CanvasTexture | null = null;
+    if (obj.material.textureDataUrl) {
+      mapTex = await loadDataUrlAsCanvasTexture(obj.material.textureDataUrl, repX, repY);
+      if (mapTex) disposables.push(mapTex);
+    }
+
+    const stdMat = new THREE.MeshStandardMaterial({
+      name: obj.material.name || `${sanitizeObjName(obj.name)}_Mat`,
+      color: new THREE.Color(mapTex ? '#ffffff' : obj.material.baseColor || '#d4d4d4'),
+      metalness: Math.max(0, Math.min(1, obj.material.metallic ?? 0.08)),
+      roughness: Math.max(0.04, Math.min(1, obj.material.roughness ?? 0.45)),
+      emissive: new THREE.Color(obj.material.emissionColor || '#000000'),
+      emissiveIntensity: Math.max(0, obj.material.emissionStrength ?? 0),
+      opacity: Math.max(0, Math.min(1, obj.material.opacity ?? 1)),
+      transparent: (obj.material.opacity ?? 1) < 0.999,
+      vertexColors: hasVC,
+      map: mapTex
+    });
+    disposables.push(stdMat);
+
+    const mesh = new THREE.Mesh(geometry, stdMat);
+    mesh.name = sanitizeObjName(obj.name);
+    scene.add(mesh);
   }
 
-  return `<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4">
-  <External>null</External>
-  <External>nil</External>
-  <Item class="Model" referent="RBXMODIXROOT">
-    <Properties>
-      <string name="Name">ModixModel</string>
-    </Properties>${itemsXml.join('')}
-  </Item>
-</roblox>`;
-}
-
-function buildExportableYUpScene(group: THREE.Object3D): THREE.Scene {
-  const exportScene = new THREE.Scene();
-  const wrapper = new THREE.Group();
-  wrapper.name = 'ModixYUpRoot';
-  // Convert Z-up Modix scene to Y-up glTF/USDZ standard
-  wrapper.rotation.x = -Math.PI / 2;
-
-  group.traverse((child) => {
-    if (child instanceof THREE.Mesh && child.visible) {
-      // Skip wireframe overlay children (LineSegments are not Mesh, so only solid meshes match)
-      const cloned = child.clone(false);
-      // Apply world transform relative to group
-      cloned.position.copy(child.position);
-      cloned.rotation.copy(child.rotation);
-      cloned.scale.copy(child.scale);
-      wrapper.add(cloned);
+  scene.updateMatrixWorld(true);
+  return {
+    scene,
+    dispose: () => {
+      for (const d of disposables) d.dispose();
     }
-  });
-  exportScene.add(wrapper);
-  exportScene.updateMatrixWorld(true);
-  return exportScene;
+  };
 }
 
-export async function exportThreeGroupToGLB(group: THREE.Object3D): Promise<ArrayBuffer> {
+export async function exportSceneToGLB(objects: SceneObjectData[]): Promise<ArrayBuffer> {
   const exporter = new GLTFExporter();
-  const yUpScene = buildExportableYUpScene(group);
-  return new Promise<ArrayBuffer>((resolve, reject) => {
-    exporter.parse(
-      yUpScene,
-      (res) => {
-        if (res instanceof ArrayBuffer) {
-          resolve(res);
-        } else {
-          const json = JSON.stringify(res, null, 2);
-          resolve(new TextEncoder().encode(json).buffer);
-        }
-      },
-      (err) => reject(err),
-      { binary: true }
-    );
-  });
+  const { scene, dispose } = await buildPbrSceneFromObjects(objects, false);
+  try {
+    return await new Promise<ArrayBuffer>((resolve, reject) => {
+      exporter.parse(
+        scene,
+        (res) => {
+          if (res instanceof ArrayBuffer) {
+            resolve(res);
+          } else {
+            const json = JSON.stringify(res, null, 2);
+            resolve(new TextEncoder().encode(json).buffer);
+          }
+        },
+        (err) => reject(err),
+        { binary: true }
+      );
+    });
+  } finally {
+    dispose();
+  }
 }
 
-export async function exportThreeGroupToGLTF(group: THREE.Object3D): Promise<string> {
+export async function exportSceneToGLTF(objects: SceneObjectData[]): Promise<string> {
   const exporter = new GLTFExporter();
-  const yUpScene = buildExportableYUpScene(group);
-  return new Promise<string>((resolve, reject) => {
-    exporter.parse(
-      yUpScene,
-      (res) => {
-        if (res instanceof ArrayBuffer) {
-          resolve(new TextDecoder().decode(res));
-        } else {
-          resolve(JSON.stringify(res, null, 2));
-        }
-      },
-      (err) => reject(err),
-      { binary: false }
-    );
-  });
+  const { scene, dispose } = await buildPbrSceneFromObjects(objects, false);
+  try {
+    return await new Promise<string>((resolve, reject) => {
+      exporter.parse(
+        scene,
+        (res) => {
+          if (res instanceof ArrayBuffer) {
+            resolve(new TextDecoder().decode(res));
+          } else {
+            resolve(JSON.stringify(res, null, 2));
+          }
+        },
+        (err) => reject(err),
+        { binary: false }
+      );
+    });
+  } finally {
+    dispose();
+  }
 }
 
-export async function exportThreeGroupToUSDZ(group: THREE.Object3D): Promise<ArrayBuffer> {
+export async function exportSceneToUSDZ(objects: SceneObjectData[]): Promise<ArrayBuffer> {
   const exporter = new USDZExporter();
-  const yUpScene = buildExportableYUpScene(group);
-  const bytes = await exporter.parseAsync(yUpScene);
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  const { scene, dispose } = await buildPbrSceneFromObjects(objects, true);
+  try {
+    const bytes = await exporter.parseAsync(scene);
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  } finally {
+    dispose();
+  }
 }
 
 // ============================================================================
@@ -581,7 +800,7 @@ export function parseOBJToMeshes(text: string, convertYUpToZUp = true): Imported
       const x = parseFloat(parts[1]) || 0;
       const y = parseFloat(parts[2]) || 0;
       const z = parseFloat(parts[3]) || 0;
-      // Convert standard Y-up OBJ (Roblox/Maya/glTF) -> Modix Z-up: (x, -z, y)
+      // Convert standard Y-up OBJ -> Modix Z-up: (x, -z, y)
       globalVerts.push(convertYUpToZUp ? [x, -z, y] : [x, y, z]);
     } else if (cmd === 'f' && parts.length >= 4) {
       const face: number[] = [];
@@ -628,7 +847,6 @@ export function parseOBJToMesh(text: string): EditableMeshData {
   const res = parseOBJToMeshes(text, false);
   if (res.length === 0) return { vertices: [], faces: [], shadeSmooth: false };
   if (res.length === 1) return res[0].mesh;
-  // Combine if single mesh expected
   const vertices: [number, number, number][] = [];
   const faces: number[][] = [];
   for (const item of res) {
@@ -738,55 +956,6 @@ export function parseOFFToMesh(text: string): EditableMeshData {
   return { vertices, faces, shadeSmooth: false };
 }
 
-export function parseRBXMXToMeshes(xmlText: string): ImportedMeshResult[] {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xmlText, 'text/xml');
-  const items = Array.from(doc.querySelectorAll('Item[class="Part"], Item[class="WedgePart"], Item[class="MeshPart"]'));
-  const results: ImportedMeshResult[] = [];
-
-  for (const item of items) {
-    const cls = item.getAttribute('class') || 'Part';
-    const nameEl = item.querySelector(':scope > Properties > string[name="Name"]');
-    const name = nameEl?.textContent?.trim() || cls;
-
-    const sizeEl = item.querySelector(':scope > Properties > Vector3[name="size"], :scope > Properties > Vector3[name="Size"]');
-    const sx = parseFloat(sizeEl?.querySelector('X')?.textContent || '2') || 2;
-    const sy = parseFloat(sizeEl?.querySelector('Y')?.textContent || '1') || 1;
-    const sz = parseFloat(sizeEl?.querySelector('Z')?.textContent || '2') || 2;
-
-    const cfEl = item.querySelector(':scope > Properties > CoordinateFrame[name="CFrame"]');
-    const px = parseFloat(cfEl?.querySelector('X')?.textContent || '0') || 0;
-    const py = parseFloat(cfEl?.querySelector('Y')?.textContent || '0') || 0;
-    const pz = parseFloat(cfEl?.querySelector('Z')?.textContent || '0') || 0;
-
-    const colEl = item.querySelector(':scope > Properties > Color3uint8[name="Color3uint8"]');
-    let baseColor = '#9ca3af';
-    if (colEl?.textContent) {
-      const c = parseInt(colEl.textContent, 10) >>> 0;
-      const r = (c >> 16) & 255;
-      const g = (c >> 8) & 255;
-      const b = c & 255;
-      baseColor = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-    }
-
-    const baseMesh = createPrimitiveMesh(cls === 'WedgePart' ? 'wedge' : 'cube');
-    // Scale unit mesh (size 2) to Roblox Part size (sx, sz, sy in Z-up)
-    const scaledVerts: [number, number, number][] = baseMesh.vertices.map(([vx, vy, vz]) => [
-      vx * (sx / 2),
-      vy * (sz / 2),
-      vz * (sy / 2)
-    ]);
-
-    results.push({
-      name,
-      mesh: { vertices: scaledVerts, faces: baseMesh.faces, shadeSmooth: false },
-      material: { baseColor },
-      location: [px, -pz, py]
-    });
-  }
-  return results;
-}
-
 function extractThreeRootMeshes(
   root: THREE.Object3D,
   fallbackName: string,
@@ -796,7 +965,6 @@ function extractThreeRootMeshes(
     root.rotation.x += Math.PI / 2;
   }
   root.updateMatrixWorld(true);
-
   const results: ImportedMeshResult[] = [];
   let idx = 1;
 
@@ -834,7 +1002,7 @@ function extractThreeRootMeshes(
             matData.textureName = `${node.name || fallbackName}_tex.png`;
           }
         } catch {
-          // Embedded image may be compressed or untainted fallback
+          // Ignore tainted/compressed embedded image fallback
         }
       }
 
@@ -851,7 +1019,7 @@ function extractThreeRootMeshes(
 
 /**
  * Universal 3D File Importer supporting:
- * .obj, .fbx, .glb, .gltf, .dae, .stl, .ply, .3mf, .amf, .svg, .off, .rbxmx
+ * .obj, .fbx, .glb, .gltf, .dae, .stl, .ply, .3mf, .amf, .svg, .off
  */
 export async function importAny3DFile(file: File): Promise<ImportedMeshResult[]> {
   const lower = file.name.toLowerCase();
@@ -870,11 +1038,6 @@ export async function importAny3DFile(file: File): Promise<ImportedMeshResult[]>
   if (lower.endsWith('.off')) {
     const text = await file.text();
     return [{ name: baseName, mesh: parseOFFToMesh(text) }];
-  }
-
-  if (lower.endsWith('.rbxmx')) {
-    const text = await file.text();
-    return parseRBXMXToMeshes(text);
   }
 
   if (lower.endsWith('.ply')) {
@@ -950,7 +1113,7 @@ export async function importAny3DFile(file: File): Promise<ImportedMeshResult[]>
     return extractThreeRootMeshes(group, baseName, false);
   }
 
-  throw new Error(`Unsupported file format: ${file.name}`);
+  throw new Error(`Formato não suportado: ${file.name}`);
 }
 
 function composeObjectMatrix(obj: SceneObjectData): THREE.Matrix4 {
@@ -1007,13 +1170,13 @@ export async function saveOrShareFile(
 
       await Share.share({
         title: filename,
-        text: 'Exported from Modix 3D',
+        text: 'Exportado pelo Modix 3D',
         url: writeResult.uri,
-        dialogTitle: `Save or Share ${filename}`
+        dialogTitle: `Salvar ou Compartilhar ${filename}`
       });
-      return `Shared ${filename}`;
+      return `Arquivo compartilhado: ${filename}`;
     } catch (err) {
-      console.warn('Native share canceled or fell back:', err);
+      console.warn('Native share fallback:', err);
     }
   }
 
@@ -1029,7 +1192,7 @@ export async function saveOrShareFile(
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1500);
-  return `Saved ${filename}`;
+  return `Arquivo salvo: ${filename}`;
 }
 
 export async function saveDataUrlPNG(filename: string, dataUrl: string): Promise<string> {
@@ -1044,9 +1207,9 @@ export async function saveDataUrlPNG(filename: string, dataUrl: string): Promise
       await Share.share({
         title: filename,
         url: writeResult.uri,
-        dialogTitle: `Export ${filename}`
+        dialogTitle: `Exportar ${filename}`
       });
-      return `Saved ${filename}`;
+      return `Imagem salva: ${filename}`;
     } catch {
       // Fallback
     }
@@ -1057,7 +1220,7 @@ export async function saveDataUrlPNG(filename: string, dataUrl: string): Promise
   document.body.appendChild(a);
   a.click();
   a.remove();
-  return `Saved ${filename}`;
+  return `Imagem salva: ${filename}`;
 }
 
 export function serializeProject(state: ModixProjectState): string {
