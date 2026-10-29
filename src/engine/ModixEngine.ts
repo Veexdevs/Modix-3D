@@ -3209,7 +3209,209 @@ export class ModixEngine {
     return exportGroup;
   }
 
+  /**
+   * Creates an exact mirrored counterpart of `objId` across X=0, Y=0, or Z=0 using M' = F * M * F
+   * and reflected local vertices + reversed face winding so outward normals and arbitrary 3D rotations stay 100% exact.
+   */
+  public mirrorObjectAcrossAxis(
+    objId: string,
+    axis: 'X' | 'Y' | 'Z' = 'X',
+    customName?: string
+  ): SceneObjectData | null {
+    const src = this.state.objects.find((o) => o.id === objId);
+    if (!src || src.kind !== 'MESH' || !src.mesh) return null;
+    this.pushUndoSnapshot();
+
+    const fx = axis === 'X' ? -1 : 1;
+    const fy = axis === 'Y' ? -1 : 1;
+    const fz = axis === 'Z' ? -1 : 1;
+    const F = new THREE.Matrix4().makeScale(fx, fy, fz);
+    const M = this.getObjectMatrix4(src);
+    const MPrime = F.clone().multiply(M).multiply(F);
+
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const scl = new THREE.Vector3();
+    MPrime.decompose(pos, quat, scl);
+    const eul = new THREE.Euler().setFromQuaternion(quat, 'XYZ');
+
+    const mirroredMesh: EditableMeshData = {
+      vertices: src.mesh.vertices.map((v) => [v[0] * fx, v[1] * fy, v[2] * fz]),
+      faces: src.mesh.faces.map((f) => [...f].reverse()),
+      vertexColors: src.mesh.vertexColors
+        ? src.mesh.vertexColors.map((c) => [c[0], c[1], c[2]])
+        : undefined,
+      shadeSmooth: src.mesh.shadeSmooth
+    };
+
+    const inferredName =
+      customName ||
+      (src.name.endsWith('_R')
+        ? `${src.name.slice(0, -2)}_L`
+        : src.name.endsWith('_Dir')
+          ? `${src.name.slice(0, -4)}_Esq`
+          : `${src.name}_Mirror`);
+
+    const clone: SceneObjectData = JSON.parse(JSON.stringify(src));
+    clone.id = `obj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    clone.name = this.makeUniqueName(inferredName);
+    clone.mesh = mirroredMesh;
+    clone.location = [
+      Number(pos.x.toFixed(4)),
+      Number(pos.y.toFixed(4)),
+      Number(pos.z.toFixed(4))
+    ];
+    clone.deltaLocation = [0, 0, 0];
+    clone.rotationDeg = [
+      Number(THREE.MathUtils.radToDeg(eul.x).toFixed(3)),
+      Number(THREE.MathUtils.radToDeg(eul.y).toFixed(3)),
+      Number(THREE.MathUtils.radToDeg(eul.z).toFixed(3))
+    ];
+    clone.deltaRotationDeg = [0, 0, 0];
+    clone.scale = [
+      Number(Math.abs(scl.x).toFixed(4)),
+      Number(Math.abs(scl.y).toFixed(4)),
+      Number(Math.abs(scl.z).toFixed(4))
+    ];
+    clone.deltaScale = [1, 1, 1];
+
+    this.state.objects.push(clone);
+    this.rebuildSceneObjects();
+    this.notify();
+    return clone;
+  }
+
+  /** Frames all visible mesh objects cleanly in the 3D viewport */
+  public frameAllMeshes(): void {
+    const box = new THREE.Box3();
+    let count = 0;
+    for (const o of this.state.objects) {
+      if (!o.visible || o.kind !== 'MESH' || !o.mesh || o.mesh.vertices.length === 0) continue;
+      const mat = this.getObjectMatrix4(o);
+      const v = new THREE.Vector3();
+      for (const pt of o.mesh.vertices) {
+        v.set(pt[0], pt[1], pt[2]).applyMatrix4(mat);
+        box.expandByPoint(v);
+        count++;
+      }
+    }
+    if (count === 0) {
+      this.frameSelected();
+      return;
+    }
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    box.getCenter(center);
+    box.getSize(size);
+    const maxSpan = Math.max(size.x, size.y, size.z, 1.2);
+    this.orbitTarget.copy(center);
+    this.orbitRadius = Math.max(3.5, Math.min(48, maxSpan * 1.9));
+    this.updateCameraFromOrbit();
+    this.handleResize();
+  }
+
+  /**
+   * Renders a 3-angle diagnostic sheet (FRONT -Y | RIGHT +X | 3/4 HERO) for the Vision 3D Inspector AI
+   * so it can visually verify silhouette, proportions, alignment, and colors against user reference images.
+   */
+  public captureMultiViewInspectionDataURL(): string {
+    if (!this.renderer || !this.scene || typeof document === 'undefined') return '';
+    try {
+      const box = new THREE.Box3();
+      let hasVerts = false;
+      const tmpV = new THREE.Vector3();
+      for (const o of this.state.objects) {
+        if (!o.visible || o.kind !== 'MESH' || !o.mesh) continue;
+        const mat = this.getObjectMatrix4(o);
+        for (const pt of o.mesh.vertices) {
+          tmpV.set(pt[0], pt[1], pt[2]).applyMatrix4(mat);
+          box.expandByPoint(tmpV);
+          hasVerts = true;
+        }
+      }
+      if (!hasVerts) return '';
+
+      const center = new THREE.Vector3();
+      const size = new THREE.Vector3();
+      box.getCenter(center);
+      box.getSize(size);
+      const radius = Math.max(2.6, Math.max(size.x, size.y, size.z) * 1.75);
+
+      const prevShading = this.state.shading;
+      if (prevShading === 'WIREFRAME') {
+        this.state.shading = 'MATERIAL';
+        this.rebuildSceneObjects();
+      }
+
+      const prevOverlays = this.overlaysGroup.visible;
+      const prevGizmo = this.gizmoGroup.visible;
+      const prevBg = this.scene.background;
+      this.overlaysGroup.visible = false;
+      this.gizmoGroup.visible = false;
+      for (const m of this.meshMap.values()) m.silhouette.visible = false;
+      this.scene.background = new THREE.Color('#17171b');
+
+      const panelW = 320;
+      const panelH = 320;
+      const sheet = document.createElement('canvas');
+      sheet.width = panelW * 3;
+      sheet.height = panelH;
+      const ctx = sheet.getContext('2d');
+      if (!ctx) return '';
+
+      this.renderer.setSize(panelW, panelH, false);
+      const cam = new THREE.PerspectiveCamera(40, 1, 0.05, 500);
+      cam.up.set(0, 0, 1);
+
+      const views: Array<{ label: string; az: number; el: number }> = [
+        { label: 'FRONT (-Y)', az: -Math.PI / 2, el: 0.06 },
+        { label: 'SIDE (+X)', az: 0, el: 0.06 },
+        { label: '3/4 HERO', az: -Math.PI * 0.33, el: 0.34 }
+      ];
+
+      views.forEach((vw, idx) => {
+        const cosEl = Math.cos(vw.el);
+        cam.position.set(
+          center.x + radius * cosEl * Math.cos(vw.az),
+          center.y + radius * cosEl * Math.sin(vw.az),
+          center.z + radius * Math.sin(vw.el)
+        );
+        cam.lookAt(center);
+        cam.updateProjectionMatrix();
+        this.renderer.render(this.scene, cam);
+        ctx.drawImage(this.renderer.domElement, idx * panelW, 0, panelW, panelH);
+
+        ctx.fillStyle = 'rgba(0,0,0,0.68)';
+        ctx.fillRect(idx * panelW + 8, 8, 96, 20);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText(vw.label, idx * panelW + 14, 22);
+        if (idx > 0) {
+          ctx.strokeStyle = '#33333b';
+          ctx.beginPath();
+          ctx.moveTo(idx * panelW, 0);
+          ctx.lineTo(idx * panelW, panelH);
+          ctx.stroke();
+        }
+      });
+
+      this.scene.background = prevBg;
+      this.overlaysGroup.visible = prevOverlays;
+      this.gizmoGroup.visible = prevGizmo;
+      if (prevShading === 'WIREFRAME') {
+        this.state.shading = prevShading;
+      }
+      this.handleResize();
+      this.rebuildSceneObjects();
+
+      return sheet.toDataURL('image/jpeg', 0.86);
+    } catch {
+      return '';
+    }
+  }
+
   public getSceneSummaryForAI(): string {
+    const tmpV = new THREE.Vector3();
     const summary = {
       mode: this.state.mode,
       shading: this.state.shading,
@@ -3218,19 +3420,37 @@ export class ModixEngine {
       selectedObjects: this.state.objects
         .filter((o) => this.state.selectedIds.includes(o.id))
         .map((o) => o.name),
-      objects: this.state.objects.map((o) => ({
-        name: o.name,
-        kind: o.kind,
-        group: o.collection,
-        location: o.location,
-        rotationDeg: o.rotationDeg,
-        scale: o.scale,
-        color: o.material.baseColor,
-        hasTexture: Boolean(o.material.textureDataUrl),
-        textureName: o.material.textureName || null,
-        verts: o.mesh?.vertices.length ?? 0,
-        faces: o.mesh?.faces.length ?? 0
-      }))
+      objects: this.state.objects.map((o) => {
+        let worldBounds: { min: [number, number, number]; max: [number, number, number] } | null = null;
+        if (o.kind === 'MESH' && o.mesh && o.mesh.vertices.length > 0) {
+          const box = new THREE.Box3();
+          const mat = this.getObjectMatrix4(o);
+          for (const pt of o.mesh.vertices) {
+            tmpV.set(pt[0], pt[1], pt[2]).applyMatrix4(mat);
+            box.expandByPoint(tmpV);
+          }
+          worldBounds = {
+            min: [Number(box.min.x.toFixed(2)), Number(box.min.y.toFixed(2)), Number(box.min.z.toFixed(2))],
+            max: [Number(box.max.x.toFixed(2)), Number(box.max.y.toFixed(2)), Number(box.max.z.toFixed(2))]
+          };
+        }
+        return {
+          name: o.name,
+          kind: o.kind,
+          group: o.collection,
+          location: o.location,
+          rotationDeg: o.rotationDeg,
+          scale: o.scale,
+          worldBounds,
+          color: o.material.baseColor,
+          metallic: o.material.metallic,
+          roughness: o.material.roughness,
+          hasTexture: Boolean(o.material.textureDataUrl),
+          textureName: o.material.textureName || null,
+          verts: o.mesh?.vertices.length ?? 0,
+          faces: o.mesh?.faces.length ?? 0
+        };
+      })
     };
     return JSON.stringify(summary);
   }

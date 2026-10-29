@@ -1,5 +1,6 @@
 import { Icons } from '../icons/blenderIcons';
 import {
+  buildMonogramAvatarDataUrl,
   createUserProject,
   deleteAccountPermanently,
   deleteUserProject,
@@ -25,12 +26,20 @@ export class ProjectsHubScreen {
   private callbacks: ProjectsHubCallbacks;
   private account: ModixUserAccount | null = null;
   private authMode: 'signup' | 'signin' = 'signup';
+  private showPassword = false;
   private pendingAvatarDataUrl = '';
+  private draftName = '';
+  private draftEmail = '';
+  private draftPassword = '';
   private projects: ModixSavedProject[] = [];
   private isLoading = false;
   private authError = '';
 
-  constructor(root: HTMLElement, initialAccount: ModixUserAccount | null, callbacks: ProjectsHubCallbacks) {
+  constructor(
+    root: HTMLElement,
+    initialAccount: ModixUserAccount | null,
+    callbacks: ProjectsHubCallbacks
+  ) {
     this.root = root;
     this.account = initialAccount;
     this.callbacks = callbacks;
@@ -52,33 +61,66 @@ export class ProjectsHubScreen {
   }
 
   // ==========================================================================
-  // 1. ACCOUNT CREATION / LOGIN SCREEN (Email Required)
+  // 1. MANDATORY EMAIL ACCOUNT CREATION / SIGN-IN SCREEN (Landscape Studio UI)
   // ==========================================================================
   private renderAuthScreen(): void {
     const isSignUp = this.authMode === 'signup';
 
     this.root.innerHTML = `
       <div class="modix-auth-screen">
-        <div class="modix-auth-shell">
-          <div class="modix-auth-brand">
-            <img src="./modix-icon.png" alt="Modix 3D" class="modix-auth-logo" />
-            <h1 class="modix-auth-title">Modix 3D</h1>
-            <p class="modix-auth-subtitle">
-              ${
-                isSignUp
-                  ? 'Crie sua conta com e-mail para criar e gerenciar seus projetos 3D.'
-                  : 'Entre com seu e-mail para acessar seus projetos 3D.'
-              }
-            </p>
+        <div class="modix-auth-bg-grid" aria-hidden="true"></div>
+
+        <div class="modix-auth-panel">
+          <!-- Left Studio Brand Showcase -->
+          <div class="modix-auth-showcase">
+            <div class="modix-auth-brand-top">
+              <div class="modix-auth-logo-box">
+                <img src="./brand/modix-mark-white.png" alt="Modix 3D" class="modix-auth-logo" />
+              </div>
+              <div>
+                <div class="modix-auth-wordmark-row">
+                  <h1 class="modix-auth-title">Modix 3D</h1>
+                  <span class="modix-auth-studio-tag">STUDIO</span>
+                </div>
+                <p class="modix-auth-tagline">Modelagem 3D, Escultura, Pintura PBR &amp; Agente Multi-IA</p>
+              </div>
+            </div>
+
+            <div class="modix-auth-feature-list">
+              <div class="modix-auth-feature-item">
+                <span class="modix-auth-feat-ico">${Icons.scanEye}</span>
+                <div>
+                  <div class="modix-auth-feat-title">Agente 3D com Múltiplas Referências</div>
+                  <div class="modix-auth-feat-sub">Envie fotos de frente, lado e detalhes para réplica 3D fiel</div>
+                </div>
+              </div>
+
+              <div class="modix-auth-feature-item">
+                <span class="modix-auth-feat-ico">${Icons.file3d}</span>
+                <div>
+                  <div class="modix-auth-feat-title">Exportação 3D Universal</div>
+                  <div class="modix-auth-feat-sub">.OBJ, .GLB, .GLTF, .USDZ, .STL, .PLY, .DAE e .PNG</div>
+                </div>
+              </div>
+
+              <div class="modix-auth-feature-item">
+                <span class="modix-auth-feat-ico">${Icons.cloudCheck}</span>
+                <div>
+                  <div class="modix-auth-feat-title">Projetos Salvos na Sua Conta</div>
+                  <div class="modix-auth-feat-sub">Sincronização automática vinculada ao seu e-mail</div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <form class="modix-auth-card" id="modix-auth-form" novalidate>
-            <div class="modix-auth-tabs">
+          <!-- Right Auth Form Card -->
+          <div class="modix-auth-card">
+            <div class="modix-auth-tabs" role="tablist">
               <button type="button" class="modix-auth-tab ${isSignUp ? 'active' : ''}" data-auth-tab="signup">
-                Criar Conta
+                ${Icons.user}<span>Criar Conta</span>
               </button>
               <button type="button" class="modix-auth-tab ${!isSignUp ? 'active' : ''}" data-auth-tab="signin">
-                Entrar
+                ${Icons.lock}<span>Entrar</span>
               </button>
             </div>
 
@@ -88,65 +130,106 @@ export class ProjectsHubScreen {
                 : ''
             }
 
-            ${
-              isSignUp
-                ? `
-              <div class="modix-auth-avatar-row">
-                <div class="modix-auth-avatar-preview" id="auth-avatar-preview">
-                  ${
-                    this.pendingAvatarDataUrl
-                      ? `<img src="${this.pendingAvatarDataUrl}" alt="Foto" />`
-                      : Icons.user
-                  }
+            <form class="modix-auth-form" id="modix-auth-form" novalidate>
+              ${
+                isSignUp
+                  ? `
+                <div class="modix-auth-profile-row">
+                  <button type="button" class="modix-auth-avatar-btn" id="btn-pick-avatar" title="Escolher foto do perfil">
+                    ${
+                      this.pendingAvatarDataUrl
+                        ? `<img src="${this.pendingAvatarDataUrl}" alt="Foto" />`
+                        : `<span class="modix-auth-avatar-empty">${Icons.cameraPhoto}</span>`
+                    }
+                  </button>
+                  <input type="file" id="input-auth-avatar" accept="image/*" style="display:none;" />
+
+                  <label class="modix-auth-field" style="flex:1;min-width:0;">
+                    <span class="modix-auth-field-lbl">Seu Nome</span>
+                    <div class="modix-auth-input-wrap">
+                      ${Icons.user}
+                      <input
+                        type="text"
+                        id="auth-name"
+                        value="${escapeHtml(this.draftName)}"
+                        placeholder="Como quer ser chamado"
+                        autocomplete="name"
+                        required
+                      />
+                    </div>
+                  </label>
                 </div>
-                <div style="flex:1;min-width:0;">
-                  <div style="font-size:11px;color:#d6d6d6;font-weight:600;">Foto do Perfil / E-mail</div>
-                  <div style="font-size:10px;color:#8a8a8a;">Automática pelo e-mail ou envie uma foto</div>
-                </div>
-                <button type="button" class="modix-btn" id="btn-pick-avatar">
-                  ${Icons.cameraPhoto}<span>Foto</span>
-                </button>
-                <input type="file" id="input-auth-avatar" accept="image/*" style="display:none;" />
-              </div>
+              `
+                  : ''
+              }
 
               <label class="modix-auth-field">
-                <span class="modix-auth-label">${Icons.user}<span>Nome</span></span>
-                <input type="text" id="auth-name" class="modix-auth-input" placeholder="Seu nome" autocomplete="name" required />
+                <span class="modix-auth-field-lbl">E-mail da Conta</span>
+                <div class="modix-auth-input-wrap">
+                  ${Icons.mail}
+                  <input
+                    type="email"
+                    id="auth-email"
+                    value="${escapeHtml(this.draftEmail)}"
+                    placeholder="seuemail@exemplo.com"
+                    autocomplete="email"
+                    required
+                  />
+                </div>
               </label>
-            `
-                : ''
-            }
 
-            <label class="modix-auth-field">
-              <span class="modix-auth-label">${Icons.mail}<span>E-mail</span></span>
-              <input type="email" id="auth-email" class="modix-auth-input" placeholder="seuemail@exemplo.com" autocomplete="email" required />
-            </label>
+              <label class="modix-auth-field">
+                <span class="modix-auth-field-lbl">Senha</span>
+                <div class="modix-auth-input-wrap">
+                  ${Icons.lock}
+                  <input
+                    type="${this.showPassword ? 'text' : 'password'}"
+                    id="auth-password"
+                    value="${escapeHtml(this.draftPassword)}"
+                    placeholder="Mínimo de 6 caracteres"
+                    autocomplete="${isSignUp ? 'new-password' : 'current-password'}"
+                    required
+                  />
+                  <button
+                    type="button"
+                    class="modix-auth-eye-btn"
+                    id="btn-toggle-pwd"
+                    title="${this.showPassword ? 'Ocultar senha' : 'Mostrar senha'}"
+                  >
+                    ${this.showPassword ? Icons.eyeClosed : Icons.eyeOpen}
+                  </button>
+                </div>
+              </label>
 
-            <label class="modix-auth-field">
-              <span class="modix-auth-label">${Icons.lock}<span>Senha</span></span>
-              <input type="password" id="auth-password" class="modix-auth-input" placeholder="Mínimo de 6 caracteres" autocomplete="${
-                isSignUp ? 'new-password' : 'current-password'
-              }" required />
-            </label>
-
-            <button type="submit" class="modix-auth-submit" id="btn-auth-submit" ${
-              this.isLoading ? 'disabled' : ''
-            }>
-              ${
-                this.isLoading
-                  ? 'Autenticando...'
-                  : isSignUp
-                    ? 'Criar Conta com E-mail'
-                    : 'Entrar na Conta'
-              }
-            </button>
-          </form>
+              <button type="submit" class="modix-auth-submit" id="btn-auth-submit" ${
+                this.isLoading ? 'disabled' : ''
+              }>
+                ${
+                  this.isLoading
+                    ? `<span class="modix-btn-spinner"></span><span>Autenticando...</span>`
+                    : `${isSignUp ? Icons.check : Icons.arrowRight}<span>${
+                        isSignUp ? 'Criar Conta com E-mail' : 'Entrar nos Meus Projetos'
+                      }</span>`
+                }
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     `;
 
+    const captureDrafts = () => {
+      const nEl = this.root.querySelector<HTMLInputElement>('#auth-name');
+      const eEl = this.root.querySelector<HTMLInputElement>('#auth-email');
+      const pEl = this.root.querySelector<HTMLInputElement>('#auth-password');
+      if (nEl) this.draftName = nEl.value;
+      if (eEl) this.draftEmail = eEl.value;
+      if (pEl) this.draftPassword = pEl.value;
+    };
+
     this.root.querySelectorAll<HTMLButtonElement>('[data-auth-tab]').forEach((btn) => {
       btn.addEventListener('click', () => {
+        captureDrafts();
         const next = btn.dataset.authTab === 'signin' ? 'signin' : 'signup';
         if (next !== this.authMode) {
           this.authMode = next;
@@ -156,17 +239,24 @@ export class ProjectsHubScreen {
       });
     });
 
+    this.root.querySelector('#btn-toggle-pwd')?.addEventListener('click', () => {
+      captureDrafts();
+      this.showPassword = !this.showPassword;
+      this.renderAuthScreen();
+    });
+
     const avatarInput = this.root.querySelector<HTMLInputElement>('#input-auth-avatar');
     const pickAvatarBtn = this.root.querySelector<HTMLButtonElement>('#btn-pick-avatar');
     if (pickAvatarBtn && avatarInput) {
       pickAvatarBtn.addEventListener('click', () => avatarInput.click());
       avatarInput.addEventListener('change', async () => {
         const file = avatarInput.files?.[0];
+        avatarInput.value = '';
         if (!file) return;
         try {
+          captureDrafts();
           this.pendingAvatarDataUrl = await fileToAvatarDataUrl(file);
-          const prev = this.root.querySelector<HTMLElement>('#auth-avatar-preview');
-          if (prev) prev.innerHTML = `<img src="${this.pendingAvatarDataUrl}" alt="Foto" />`;
+          this.renderAuthScreen();
         } catch (err) {
           showToast(err instanceof Error ? err.message : 'Falha ao carregar foto.');
         }
@@ -178,17 +268,14 @@ export class ProjectsHubScreen {
       ev.preventDefault();
       if (this.isLoading) return;
 
-      const email = (this.root.querySelector<HTMLInputElement>('#auth-email')?.value || '').trim();
-      const password = this.root.querySelector<HTMLInputElement>('#auth-password')?.value || '';
-      const name = (this.root.querySelector<HTMLInputElement>('#auth-name')?.value || '').trim();
+      captureDrafts();
+      const email = this.draftEmail.trim();
+      const password = this.draftPassword;
+      const name = this.draftName.trim();
 
       this.authError = '';
       this.isLoading = true;
-      const submitBtn = this.root.querySelector<HTMLButtonElement>('#btn-auth-submit');
-      if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.textContent = 'Autenticando...';
-      }
+      this.renderAuthScreen();
 
       try {
         const acc =
@@ -197,6 +284,7 @@ export class ProjectsHubScreen {
             : await signInWithEmail(email, password);
         this.account = acc;
         this.pendingAvatarDataUrl = '';
+        this.draftPassword = '';
         this.isLoading = false;
         await this.mount(acc);
       } catch (err) {
@@ -208,7 +296,8 @@ export class ProjectsHubScreen {
   }
 
   // ==========================================================================
-  // 2. MANDATORY PROJECTS SCREEN (ONLY Projects & Create Project + Top-Right Profile)
+  // 2. MANDATORY STARTUP PROJECTS SCREEN
+  //    Strictly ONLY Projects & Create Project + Top-Right Account Photo/Name
   // ==========================================================================
   private renderProjectsScreen(): void {
     const acc = this.account;
@@ -217,19 +306,40 @@ export class ProjectsHubScreen {
       return;
     }
 
+    const fallbackAvatar = buildMonogramAvatarDataUrl(acc.name, acc.email);
+
     this.root.innerHTML = `
       <div class="modix-projects-screen">
-        <header class="modix-projects-header">
+        <header class="modix-projects-topbar">
           <div class="modix-projects-brand">
-            <img src="./modix-icon.png" alt="Modix" class="modix-projects-logo" />
-            <span class="modix-projects-heading">Projetos</span>
+            <img src="./brand/modix-mark-white.png" alt="Modix" class="modix-projects-logo" />
+            <span class="modix-projects-brand-name">Modix</span>
+            <span class="modix-projects-brand-sep"></span>
+            <span class="modix-projects-brand-sub">Projetos</span>
+            ${
+              !this.isLoading
+                ? `<span class="modix-projects-count-pill">${this.projects.length}</span>`
+                : ''
+            }
           </div>
 
-          <div class="modix-projects-header-right">
+          <div class="modix-projects-topbar-right">
             <input type="file" id="hub-avatar-file" accept="image/*" style="display:none;" />
             <input type="file" id="hub-import-modix" accept=".modix,.json" style="display:none;" />
-            <button type="button" class="modix-account-pill" id="btn-account-menu" title="${escapeHtml(acc.email)}">
-              <img src="${escapeHtml(acc.avatarUrl)}" alt="${escapeHtml(acc.name)}" class="modix-account-avatar" />
+
+            <button
+              type="button"
+              class="modix-account-chip"
+              id="btn-account-menu"
+              title="Conta conectada: ${escapeHtml(acc.email)}"
+            >
+              <img
+                src="${escapeHtml(acc.avatarUrl || fallbackAvatar)}"
+                data-fallback="${escapeHtml(fallbackAvatar)}"
+                alt="${escapeHtml(acc.name)}"
+                class="modix-account-avatar"
+                id="hub-account-avatar-img"
+              />
               <div class="modix-account-meta">
                 <span class="modix-account-name">${escapeHtml(acc.name)}</span>
                 <span class="modix-account-email">${escapeHtml(acc.email)}</span>
@@ -239,16 +349,43 @@ export class ProjectsHubScreen {
           </div>
         </header>
 
-        <main class="modix-projects-body">
+        <main class="modix-projects-main">
+          <div class="modix-projects-hero">
+            <div>
+              <h1 class="modix-projects-heading">Meus Projetos</h1>
+              <p class="modix-projects-count">
+                ${
+                  this.isLoading
+                    ? 'Sincronizando seus projetos...'
+                    : this.projects.length === 0
+                      ? 'Nenhum projeto salvo ainda — toque em Criar Projeto para começar.'
+                      : `${this.projects.length} projeto${this.projects.length > 1 ? 's' : ''} na sua conta`
+                }
+              </p>
+            </div>
+
+            <button type="button" class="modix-create-project-btn" id="btn-create-project-top">
+              ${Icons.plus}<span>Criar Projeto</span>
+            </button>
+          </div>
+
           <div class="modix-projects-grid">
-            <button type="button" class="modix-project-card modix-create-card" id="btn-create-project">
-              <div class="modix-create-icon">${Icons.plus}</div>
-              <div class="modix-create-title">Criar Projeto</div>
+            <button
+              type="button"
+              class="modix-project-card modix-project-create-card"
+              id="btn-create-project-card"
+            >
+              <div class="modix-project-create-plus">${Icons.plus}</div>
+              <div class="modix-project-create-label">Criar Projeto</div>
+              <div class="modix-project-create-hint">Cena 3D nova ou arquivo .MODIX</div>
             </button>
 
             ${
               this.isLoading
-                ? `<div class="modix-projects-status">Carregando projetos...</div>`
+                ? `<div class="modix-project-card modix-project-skeleton">
+                    <div class="modix-btn-spinner"></div>
+                    <span>Carregando projetos...</span>
+                   </div>`
                 : this.projects.map((p) => this.renderProjectCardHtml(p)).join('')
             }
           </div>
@@ -256,7 +393,15 @@ export class ProjectsHubScreen {
       </div>
     `;
 
-    // Account menu in top-right corner (Photo + Name + Sign Out + Delete Account)
+    // Safe fallback if remote Gravatar fails to load
+    const avatarImg = this.root.querySelector<HTMLImageElement>('#hub-account-avatar-img');
+    avatarImg?.addEventListener('error', () => {
+      const fb = avatarImg.dataset.fallback;
+      if (fb && avatarImg.src !== fb) {
+        avatarImg.src = fb;
+      }
+    });
+
     const accountBtn = this.root.querySelector<HTMLButtonElement>('#btn-account-menu');
     const avatarInput = this.root.querySelector<HTMLInputElement>('#hub-avatar-file');
     const importModixInput = this.root.querySelector<HTMLInputElement>('#hub-import-modix');
@@ -296,19 +441,19 @@ export class ProjectsHubScreen {
     accountBtn?.addEventListener('click', () => {
       if (!this.account) return;
       openDropdownMenu(accountBtn, [
-        { sectionTitle: `${this.account.name} (${this.account.email})` },
+        { sectionTitle: `${this.account.name} · ${this.account.email}` },
         {
           label: 'Alterar Foto do Perfil...',
           icon: Icons.cameraPhoto,
           onClick: () => avatarInput?.click()
         },
         {
-          label: 'Alterar Nome...',
+          label: 'Editar Nome...',
           icon: Icons.edit,
           onClick: () => {
             if (!this.account) return;
             openTextPromptModal({
-              title: 'Alterar Nome da Conta',
+              title: 'Editar Nome da Conta',
               label: 'Seu nome de exibição:',
               initialValue: this.account.name,
               confirmLabel: 'Salvar',
@@ -321,7 +466,7 @@ export class ProjectsHubScreen {
             });
           }
         },
-        { divider: true, label: '' },
+        { divider: true },
         {
           label: 'Sair da Conta',
           icon: Icons.logout,
@@ -335,7 +480,7 @@ export class ProjectsHubScreen {
           }
         },
         {
-          label: 'Deletar Conta Permanentemente...',
+          label: 'Deletar Conta...',
           icon: Icons.userDelete,
           danger: true,
           onClick: () => this.openDeleteAccountConfirmModal()
@@ -343,16 +488,14 @@ export class ProjectsHubScreen {
       ]);
     });
 
-    // Create Project button
-    const createBtn = this.root.querySelector<HTMLButtonElement>('#btn-create-project');
-    createBtn?.addEventListener('click', () => {
+    const triggerCreateProject = () => {
       if (!this.account) return;
       const nextIndex = this.projects.length + 1;
       openTextPromptModal({
-        title: 'Criar Novo Projeto',
+        title: 'Criar Novo Projeto 3D',
         label: 'Nome do projeto:',
         initialValue: `Projeto ${nextIndex}`,
-        placeholder: 'Ex: Cenário, Personagem, Arma...',
+        placeholder: 'Ex: Personagem, Carro, Espada, Cenário...',
         confirmLabel: 'Criar e Abrir',
         extraActionLabel: 'Importar .MODIX',
         onExtraAction: () => importModixInput?.click(),
@@ -363,9 +506,11 @@ export class ProjectsHubScreen {
           this.callbacks.onOpenProject(created, this.account);
         }
       });
-    });
+    };
 
-    // Existing project cards
+    this.root.querySelector('#btn-create-project-top')?.addEventListener('click', triggerCreateProject);
+    this.root.querySelector('#btn-create-project-card')?.addEventListener('click', triggerCreateProject);
+
     this.root.querySelectorAll<HTMLElement>('[data-project-id]').forEach((card) => {
       const pid = card.dataset.projectId!;
       const proj = this.projects.find((p) => p.id === pid);
@@ -420,7 +565,7 @@ export class ProjectsHubScreen {
               showToast('Projeto duplicado.');
             }
           },
-          { divider: true, label: '' },
+          { divider: true },
           {
             label: 'Excluir Projeto',
             icon: Icons.trash,
@@ -452,17 +597,23 @@ export class ProjectsHubScreen {
           ${
             proj.thumbnailUrl
               ? `<img src="${proj.thumbnailUrl}" alt="${escapeHtml(proj.name)}" />`
-              : `<div class="modix-project-placeholder">${Icons.file3d}</div>`
+              : `<div class="modix-project-thumb-placeholder">
+                  <div class="modix-project-thumb-grid"></div>
+                  ${Icons.file3d}
+                 </div>`
           }
+          <span class="modix-project-obj-badge">${proj.objectCount} obj</span>
         </div>
-        <div class="modix-project-footer">
-          <div class="modix-project-info">
-            <div class="modix-project-name" title="${escapeHtml(proj.name)}">${escapeHtml(proj.name)}</div>
-            <div class="modix-project-meta">${formattedDate} · ${proj.objectCount} obj</div>
+        <div class="modix-project-body">
+          <div class="modix-project-meta">
+            <div class="modix-project-title" title="${escapeHtml(proj.name)}">${escapeHtml(proj.name)}</div>
+            <div class="modix-project-sub">${formattedDate}</div>
           </div>
-          <button type="button" class="modix-project-more" data-proj-more title="Opções do Projeto">
-            ${Icons.moreDots}
-          </button>
+          <div class="modix-project-actions">
+            <button type="button" class="modix-project-act-btn" data-proj-more title="Opções do Projeto">
+              ${Icons.moreDots}
+            </button>
+          </div>
         </div>
       </div>
     `;
@@ -475,23 +626,25 @@ export class ProjectsHubScreen {
     const backdrop = document.createElement('div');
     backdrop.className = 'modix-modal-backdrop';
     backdrop.innerHTML = `
-      <div class="modix-modal" style="width:min(400px, 92vw);">
-        <div class="modix-modal-hdr">
-          <span style="display:flex;align-items:center;gap:6px;color:#fca5a5;">
-            ${Icons.userDelete}<span>Deletar Conta</span>
+      <div class="modix-prompt-card">
+        <div class="modix-modal-header">
+          <span style="display:inline-flex;align-items:center;gap:6px;color:#fca5a5;font-weight:700;">
+            ${Icons.userDelete}<span>Deletar Conta Permanentemente</span>
           </span>
-          <button type="button" class="modix-btn" data-close style="height:22px;padding:0 6px;">${Icons.close}</button>
+          <button type="button" class="modix-modal-close" data-close>${Icons.close}</button>
         </div>
-        <div class="modix-modal-body" style="gap:10px;">
-          <div style="font-size:11.5px;color:#dcdcdc;line-height:1.45;">
-            Tem certeza que deseja excluir permanentemente a conta <strong>${escapeHtml(acc.email)}</strong> e todos os seus projetos salvos? Esta ação não pode ser desfeita.
-          </div>
-          <div style="display:flex;justify-content:flex-end;gap:8px;">
-            <button type="button" class="modix-btn" data-close>Cancelar</button>
-            <button type="button" class="modix-btn danger" id="btn-confirm-del-acc">
-              ${Icons.trash}<span>Deletar Minha Conta</span>
-            </button>
-          </div>
+        <div class="modix-prompt-body">
+          <p style="margin:0;font-size:12px;color:#d4d4d8;line-height:1.5;">
+            Tem certeza que deseja excluir permanentemente a conta
+            <strong style="color:#ffffff;">${escapeHtml(acc.email)}</strong>
+            e todos os seus projetos 3D salvos? Esta ação não pode ser desfeita.
+          </p>
+        </div>
+        <div class="modix-prompt-footer">
+          <button type="button" class="modix-btn-sm" data-close>Cancelar</button>
+          <button type="button" class="modix-btn-sm danger" id="btn-confirm-del-acc">
+            ${Icons.trash}<span>Deletar Conta</span>
+          </button>
         </div>
       </div>
     `;
@@ -506,7 +659,7 @@ export class ProjectsHubScreen {
     const confirmBtn = backdrop.querySelector<HTMLButtonElement>('#btn-confirm-del-acc');
     confirmBtn?.addEventListener('click', async () => {
       confirmBtn.disabled = true;
-      confirmBtn.textContent = 'Excluindo...';
+      confirmBtn.innerHTML = `<span class="modix-btn-spinner"></span><span>Excluindo...</span>`;
       try {
         await deleteAccountPermanently(acc.id);
         close();
@@ -517,6 +670,7 @@ export class ProjectsHubScreen {
         showToast('Sua conta e seus projetos foram excluídos.');
       } catch (err) {
         confirmBtn.disabled = false;
+        confirmBtn.innerHTML = `${Icons.trash}<span>Deletar Conta</span>`;
         showToast(err instanceof Error ? err.message : 'Falha ao excluir conta.');
       }
     });
@@ -529,6 +683,7 @@ function formatShortDate(iso: string): string {
     return d.toLocaleDateString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
+      year: '2-digit',
       hour: '2-digit',
       minute: '2-digit'
     });
