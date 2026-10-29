@@ -1,0 +1,31 @@
+{
+  "name": "modix-3d",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Modix 3D — Mobile 3D Modeling, Sculpting & Animation Studio (Android APK & iOS IPA)",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5173",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 4173",
+    "cap:sync": "npm run build && npx cap sync",
+    "android:sync": "npm run build && npx cap sync android",
+    "ios:sync": "npm run build && npx cap sync ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/share": "^8.0.3",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.4",
+    "@capacitor/ios": "^8.6.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.0",
+    "@types/three": "^0.186.0",
+    "typescript": "~5.8.3",
+    "vite": "^8.3.5"
+  }
+}

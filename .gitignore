@@ -1,0 +1,28 @@
+node_modules/
+www/
+dist/
+build/
+.vite/
+.DS_Store
+*.log
+
+# Android build outputs
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties
+android/app/src/main/assets/public/
+*.keystore
+*.jks
+
+# iOS build outputs
+ios/App/build/
+ios/build/
+ios/ipa_stage/
+ios/App/Pods/
+ios/App/App/public/
+*.ipa
+*.apk
+*.aab
+DerivedData/
