@@ -1,5 +1,10 @@
 import * as THREE from 'three';
-import type { EditableMeshData, ModifierItem, PrimitiveType } from '../types/scene';
+import type {
+  EditableMeshData,
+  ModifierItem,
+  PrimitiveType,
+  UVProjectionMode
+} from '../types/scene';
 
 export function cloneMeshData(mesh: EditableMeshData): EditableMeshData {
   return {
@@ -15,7 +20,6 @@ export function computeFaceNormal(
   face: number[]
 ): [number, number, number] {
   if (face.length < 3) return [0, 0, 1];
-  // Newell's method for arbitrary polygon normal
   let nx = 0;
   let ny = 0;
   let nz = 0;
@@ -69,39 +73,436 @@ export function computeVertexNormals(mesh: EditableMeshData): [number, number, n
   return normals;
 }
 
+/** Extrudes an arbitrary 2D contour (supporting concave polygons) along Z [-height/2 .. +height/2] */
+export function createExtrudedPolygonMesh(
+  points2D: [number, number][],
+  height = 0.6,
+  shadeSmooth = false
+): EditableMeshData {
+  if (points2D.length < 3) return createPrimitiveMesh('cube');
+  const contour = points2D.map(([x, y]) => new THREE.Vector2(x, y));
+  // Ensure counter-clockwise winding for ShapeUtils
+  if (THREE.ShapeUtils.isClockWise(contour)) {
+    contour.reverse();
+  }
+  const tris = THREE.ShapeUtils.triangulateShape(contour, []);
+  const n = contour.length;
+  const hz = height * 0.5;
+  const vertices: [number, number, number][] = [];
+  for (const p of contour) vertices.push([p.x, p.y, -hz]); // bottom 0..n-1
+  for (const p of contour) vertices.push([p.x, p.y, hz]);  // top n..2n-1
+
+  const faces: number[][] = [];
+  // Bottom cap (reversed winding so normal points -Z)
+  for (const [a, b, c] of tris) {
+    faces.push([c, b, a]);
+  }
+  // Top cap (+Z)
+  for (const [a, b, c] of tris) {
+    faces.push([n + a, n + b, n + c]);
+  }
+  // Side quad walls
+  for (let i = 0; i < n; i++) {
+    const ni = (i + 1) % n;
+    faces.push([i, ni, n + ni, n + i]);
+  }
+  return { vertices, faces, shadeSmooth };
+}
+
+/** Revolves a [radius, z] 2D profile around the Z axis */
+export function createLatheMesh(
+  profileRZ: [number, number][],
+  segments = 20,
+  shadeSmooth = true
+): EditableMeshData {
+  if (profileRZ.length < 2) return createPrimitiveMesh('cylinder');
+  const segs = Math.max(4, Math.min(64, Math.round(segments)));
+  const vertices: [number, number, number][] = [];
+  const faces: number[][] = [];
+
+  for (let i = 0; i < profileRZ.length; i++) {
+    const [r, z] = profileRZ[i];
+    const rad = Math.max(0.001, r);
+    for (let j = 0; j < segs; j++) {
+      const th = (2 * Math.PI * j) / segs;
+      vertices.push([rad * Math.cos(th), rad * Math.sin(th), z]);
+    }
+  }
+
+  for (let i = 0; i < profileRZ.length - 1; i++) {
+    const rowA = i * segs;
+    const rowB = (i + 1) * segs;
+    for (let j = 0; j < segs; j++) {
+      const nj = (j + 1) % segs;
+      faces.push([rowA + j, rowA + nj, rowB + nj, rowB + j]);
+    }
+  }
+
+  // Cap bottom and top if open
+  if (profileRZ[0][0] > 0.02) {
+    const bottomCap: number[] = [];
+    for (let j = segs - 1; j >= 0; j--) bottomCap.push(j);
+    faces.push(bottomCap);
+  }
+  const lastRow = (profileRZ.length - 1) * segs;
+  if (profileRZ[profileRZ.length - 1][0] > 0.02) {
+    const topCap: number[] = [];
+    for (let j = 0; j < segs; j++) topCap.push(lastRow + j);
+    faces.push(topCap);
+  }
+
+  return { vertices, faces, shadeSmooth };
+}
+
+/** Converts any Three.js BufferGeometry (from FBX/GLB/DAE/PLY/3MF/SVG) into EditableMeshData */
+export function threeGeometryToEditableMesh(
+  geo: THREE.BufferGeometry,
+  convertYUpToZUp = true
+): EditableMeshData {
+  const pos = geo.getAttribute('position');
+  if (!pos) return { vertices: [], faces: [], shadeSmooth: false };
+
+  const colAttr = geo.getAttribute('color');
+  const vertices: [number, number, number][] = [];
+  const vertexColors: [number, number, number][] = [];
+  const vertMap = new Map<string, number>();
+
+  const getVertIndex = (i: number): number => {
+    const rx = pos.getX(i);
+    const ry = pos.getY(i);
+    const rz = pos.getZ(i);
+    // Y-up (x, y, z) -> Z-up (x, -z, y) preserves right-handed winding!
+    const x = rx;
+    const y = convertYUpToZUp ? -rz : ry;
+    const z = convertYUpToZUp ? ry : rz;
+
+    const key = `${x.toFixed(5)}_${y.toFixed(5)}_${z.toFixed(5)}`;
+    const existing = vertMap.get(key);
+    if (existing !== undefined) return existing;
+
+    const idx = vertices.length;
+    vertices.push([x, y, z]);
+    if (colAttr) {
+      vertexColors.push([colAttr.getX(i), colAttr.getY(i), colAttr.getZ(i)]);
+    }
+    vertMap.set(key, idx);
+    return idx;
+  };
+
+  const faces: number[][] = [];
+  const index = geo.getIndex();
+  if (index) {
+    for (let i = 0; i + 2 < index.count; i += 3) {
+      const a = getVertIndex(index.getX(i));
+      const b = getVertIndex(index.getX(i + 1));
+      const c = getVertIndex(index.getX(i + 2));
+      if (a !== b && b !== c && a !== c) faces.push([a, b, c]);
+    }
+  } else {
+    for (let i = 0; i + 2 < pos.count; i += 3) {
+      const a = getVertIndex(i);
+      const b = getVertIndex(i + 1);
+      const c = getVertIndex(i + 2);
+      if (a !== b && b !== c && a !== c) faces.push([a, b, c]);
+    }
+  }
+
+  return {
+    vertices,
+    faces,
+    vertexColors: colAttr ? vertexColors : undefined,
+    shadeSmooth: false
+  };
+}
+
 export function createPrimitiveMesh(type: PrimitiveType): EditableMeshData {
   switch (type) {
     case 'cube': {
-      // Standard 2m Blender cube [-1..1] in Z-up
       const vertices: [number, number, number][] = [
-        [-1, -1, -1],
-        [1, -1, -1],
-        [1, 1, -1],
-        [-1, 1, -1],
-        [-1, -1, 1],
-        [1, -1, 1],
-        [1, 1, 1],
-        [-1, 1, 1]
+        [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
+        [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]
       ];
       const faces: number[][] = [
-        [0, 3, 2, 1], // bottom (-Z)
-        [4, 5, 6, 7], // top (+Z)
-        [0, 1, 5, 4], // front (-Y)
-        [1, 2, 6, 5], // right (+X)
-        [2, 3, 7, 6], // back (+Y)
-        [3, 0, 4, 7]  // left (-X)
+        [0, 3, 2, 1],
+        [4, 5, 6, 7],
+        [0, 1, 5, 4],
+        [1, 2, 6, 5],
+        [2, 3, 7, 6],
+        [3, 0, 4, 7]
       ];
       return { vertices, faces, shadeSmooth: false };
     }
 
     case 'plane': {
       const vertices: [number, number, number][] = [
-        [-1, -1, 0],
-        [1, -1, 0],
-        [1, 1, 0],
-        [-1, 1, 0]
+        [-1, -1, 0], [1, -1, 0], [1, 1, 0], [-1, 1, 0]
       ];
       return { vertices, faces: [[0, 1, 2, 3]], shadeSmooth: false };
+    }
+
+    case 'grid': {
+      const divs = 8;
+      const half = 1.5;
+      const vertices: [number, number, number][] = [];
+      const faces: number[][] = [];
+      for (let iy = 0; iy <= divs; iy++) {
+        for (let ix = 0; ix <= divs; ix++) {
+          vertices.push([
+            -half + (2 * half * ix) / divs,
+            -half + (2 * half * iy) / divs,
+            0
+          ]);
+        }
+      }
+      const stride = divs + 1;
+      for (let iy = 0; iy < divs; iy++) {
+        for (let ix = 0; ix < divs; ix++) {
+          const a = iy * stride + ix;
+          const b = a + 1;
+          const c = a + stride + 1;
+          const d = a + stride;
+          faces.push([a, b, c, d]);
+        }
+      }
+      return { vertices, faces, shadeSmooth: false };
+    }
+
+    case 'wedge': {
+      // Classic Roblox WedgePart (sloped ramp from -Y front bottom to +Y back top)
+      const vertices: [number, number, number][] = [
+        [-1, -1, -1], // 0 front-left-bottom
+        [1, -1, -1],  // 1 front-right-bottom
+        [1, 1, -1],   // 2 back-right-bottom
+        [-1, 1, -1],  // 3 back-left-bottom
+        [-1, 1, 1],   // 4 back-left-top
+        [1, 1, 1]     // 5 back-right-top
+      ];
+      const faces: number[][] = [
+        [0, 3, 2, 1], // bottom
+        [2, 3, 4, 5], // vertical back
+        [0, 1, 5, 4], // sloped ramp
+        [0, 4, 3],    // left triangle
+        [1, 2, 5]     // right triangle
+      ];
+      return { vertices, faces, shadeSmooth: false };
+    }
+
+    case 'corner_wedge': {
+      // Classic Roblox CornerWedgePart
+      const vertices: [number, number, number][] = [
+        [-1, -1, -1], // 0
+        [1, -1, -1],  // 1
+        [1, 1, -1],   // 2
+        [-1, 1, -1],  // 3
+        [1, 1, 1]     // 4 apex corner
+      ];
+      const faces: number[][] = [
+        [0, 3, 2, 1], // bottom
+        [1, 2, 4],    // right vertical
+        [2, 3, 4],    // back vertical
+        [0, 1, 4],    // front slope
+        [3, 0, 4]     // left slope
+      ];
+      return { vertices, faces, shadeSmooth: false };
+    }
+
+    case 'pyramid': {
+      const vertices: [number, number, number][] = [
+        [-1, -1, -1],
+        [1, -1, -1],
+        [1, 1, -1],
+        [-1, 1, -1],
+        [0, 0, 1.2]
+      ];
+      const faces: number[][] = [
+        [0, 3, 2, 1],
+        [0, 1, 4],
+        [1, 2, 4],
+        [2, 3, 4],
+        [3, 0, 4]
+      ];
+      return { vertices, faces, shadeSmooth: false };
+    }
+
+    case 'prism': {
+      // Triangular roof prism along Y
+      const vertices: [number, number, number][] = [
+        [-1, -1, -0.8], [1, -1, -0.8], [0, -1, 0.9],
+        [-1, 1, -0.8], [1, 1, -0.8], [0, 1, 0.9]
+      ];
+      const faces: number[][] = [
+        [0, 2, 1],       // front
+        [3, 4, 5],       // back
+        [0, 1, 4, 3],    // bottom
+        [1, 2, 5, 4],    // right roof
+        [2, 0, 3, 5]     // left roof
+      ];
+      return { vertices, faces, shadeSmooth: false };
+    }
+
+    case 'hex_cylinder': {
+      return makeNGonCylinder(6, 1.0, 2.0, false);
+    }
+
+    case 'cylinder': {
+      return makeNGonCylinder(20, 1.0, 2.0, false);
+    }
+
+    case 'pipe': {
+      const segs = 20;
+      const rOut = 1.0;
+      const rIn = 0.68;
+      const hz = 1.0;
+      const vertices: [number, number, number][] = [];
+      for (const z of [-hz, hz]) {
+        for (const r of [rOut, rIn]) {
+          for (let j = 0; j < segs; j++) {
+            const th = (2 * Math.PI * j) / segs;
+            vertices.push([r * Math.cos(th), r * Math.sin(th), z]);
+          }
+        }
+      }
+      // Indices: bOut=0, bIn=segs, tOut=2*segs, tIn=3*segs
+      const bOut = 0;
+      const bIn = segs;
+      const tOut = 2 * segs;
+      const tIn = 3 * segs;
+      const faces: number[][] = [];
+      for (let j = 0; j < segs; j++) {
+        const nj = (j + 1) % segs;
+        faces.push([bOut + j, bOut + nj, tOut + nj, tOut + j]); // outer wall
+        faces.push([bIn + nj, bIn + j, tIn + j, tIn + nj]);     // inner wall
+        faces.push([tOut + j, tOut + nj, tIn + nj, tIn + j]);   // top rim
+        faces.push([bIn + j, bIn + nj, bOut + nj, bOut + j]);   // bottom rim
+      }
+      return { vertices, faces, shadeSmooth: false };
+    }
+
+    case 'ring': {
+      const segs = 24;
+      const rOut = 1.1;
+      const rIn = 0.55;
+      const hz = 0.16;
+      const vertices: [number, number, number][] = [];
+      for (const z of [-hz, hz]) {
+        for (const r of [rOut, rIn]) {
+          for (let j = 0; j < segs; j++) {
+            const th = (2 * Math.PI * j) / segs;
+            vertices.push([r * Math.cos(th), r * Math.sin(th), z]);
+          }
+        }
+      }
+      const bOut = 0, bIn = segs, tOut = 2 * segs, tIn = 3 * segs;
+      const faces: number[][] = [];
+      for (let j = 0; j < segs; j++) {
+        const nj = (j + 1) % segs;
+        faces.push([bOut + j, bOut + nj, tOut + nj, tOut + j]);
+        faces.push([bIn + nj, bIn + j, tIn + j, tIn + nj]);
+        faces.push([tOut + j, tOut + nj, tIn + nj, tIn + j]);
+        faces.push([bIn + j, bIn + nj, bOut + nj, bOut + j]);
+      }
+      return { vertices, faces, shadeSmooth: false };
+    }
+
+    case 'arch': {
+      // 2D arch contour in XZ plane extruded along Y!
+      const pts: [number, number][] = [
+        [-1.2, -1.0],
+        [-0.7, -1.0]
+      ];
+      const archSegs = 12;
+      for (let i = 0; i <= archSegs; i++) {
+        const a = Math.PI - (Math.PI * i) / archSegs;
+        pts.push([0.7 * Math.cos(a), -0.2 + 0.7 * Math.sin(a)]);
+      }
+      pts.push([0.7, -1.0], [1.2, -1.0], [1.2, 0.9], [-1.2, 0.9]);
+      const ext = createExtrudedPolygonMesh(pts, 0.8, false);
+      // Rotate from XY extrusion to XZ upright arch
+      for (const v of ext.vertices) {
+        const y = v[1];
+        const z = v[2];
+        v[1] = -z;
+        v[2] = y;
+      }
+      return ext;
+    }
+
+    case 'stairs': {
+      const steps = 6;
+      const pts: [number, number][] = [[-1.2, -1.0], [1.2, -1.0]];
+      for (let s = 0; s < steps; s++) {
+        const x0 = 1.2 - (2.4 * s) / steps;
+        const x1 = 1.2 - (2.4 * (s + 1)) / steps;
+        const zTop = -1.0 + (2.0 * (s + 1)) / steps;
+        pts.push([x0, zTop], [x1, zTop]);
+      }
+      const ext = createExtrudedPolygonMesh(pts, 1.8, false);
+      for (const v of ext.vertices) {
+        const y = v[1];
+        const z = v[2];
+        v[1] = -z;
+        v[2] = y;
+      }
+      return ext;
+    }
+
+    case 'star': {
+      const pts: [number, number][] = [];
+      const spikes = 5;
+      for (let i = 0; i < spikes * 2; i++) {
+        const r = i % 2 === 0 ? 1.15 : 0.48;
+        const a = (Math.PI * i) / spikes - Math.PI / 2;
+        pts.push([r * Math.cos(a), r * Math.sin(a)]);
+      }
+      return createExtrudedPolygonMesh(pts, 0.45, false);
+    }
+
+    case 'gear': {
+      const teeth = 10;
+      const pts: [number, number][] = [];
+      for (let i = 0; i < teeth * 4; i++) {
+        const phase = i % 4;
+        const r = phase === 1 || phase === 2 ? 1.12 : 0.84;
+        const a = (2 * Math.PI * i) / (teeth * 4);
+        pts.push([r * Math.cos(a), r * Math.sin(a)]);
+      }
+      return createExtrudedPolygonMesh(pts, 0.4, false);
+    }
+
+    case 'crystal': {
+      return createLatheMesh(
+        [
+          [0.002, -1.35],
+          [0.58, -0.55],
+          [0.65, 0.55],
+          [0.002, 1.35]
+        ],
+        6,
+        false
+      );
+    }
+
+    case 'heart': {
+      const pts: [number, number][] = [];
+      const n = 32;
+      for (let i = 0; i < n; i++) {
+        const t = (2 * Math.PI * i) / n;
+        const x = 16 * Math.pow(Math.sin(t), 3);
+        const y =
+          13 * Math.cos(t) -
+          5 * Math.cos(2 * t) -
+          2 * Math.cos(3 * t) -
+          Math.cos(4 * t);
+        pts.push([x * 0.068, y * 0.068]);
+      }
+      return createExtrudedPolygonMesh(pts, 0.48, true);
+    }
+
+    case 'torus_knot': {
+      const tkGeo = new THREE.TorusKnotGeometry(0.82, 0.24, 64, 10);
+      const mesh = threeGeometryToEditableMesh(tkGeo, false);
+      mesh.shadeSmooth = true;
+      return mesh;
     }
 
     case 'uv_sphere': {
@@ -110,7 +511,7 @@ export function createPrimitiveMesh(type: PrimitiveType): EditableMeshData {
       const r = 1;
       const vertices: [number, number, number][] = [];
       const faces: number[][] = [];
-      vertices.push([0, 0, r]); // top pole 0
+      vertices.push([0, 0, r]);
       for (let i = 1; i < rings; i++) {
         const phi = (Math.PI * i) / rings;
         const z = r * Math.cos(phi);
@@ -120,15 +521,11 @@ export function createPrimitiveMesh(type: PrimitiveType): EditableMeshData {
           vertices.push([sinPhi * Math.cos(theta), sinPhi * Math.sin(theta), z]);
         }
       }
-      vertices.push([0, 0, -r]); // bottom pole
+      vertices.push([0, 0, -r]);
       const bottomIdx = vertices.length - 1;
-
-      // Top cap triangles
       for (let j = 0; j < segs; j++) {
-        const next = (j + 1) % segs;
-        faces.push([0, 1 + j, 1 + next]);
+        faces.push([0, 1 + j, 1 + ((j + 1) % segs)]);
       }
-      // Middle quad bands
       for (let i = 0; i < rings - 2; i++) {
         const rowA = 1 + i * segs;
         const rowB = 1 + (i + 1) * segs;
@@ -137,7 +534,6 @@ export function createPrimitiveMesh(type: PrimitiveType): EditableMeshData {
           faces.push([rowA + j, rowB + j, rowB + next, rowA + next]);
         }
       }
-      // Bottom cap triangles
       const lastRow = 1 + (rings - 2) * segs;
       for (let j = 0; j < segs; j++) {
         const next = (j + 1) % segs;
@@ -163,43 +559,13 @@ export function createPrimitiveMesh(type: PrimitiveType): EditableMeshData {
         [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9],
         [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]
       ];
-      let ico: EditableMeshData = { vertices, faces, shadeSmooth: false };
-      ico = subdivideTrianglesSphere(ico);
-      return ico;
-    }
-
-    case 'cylinder': {
-      const segs = 20;
-      const r = 1;
-      const h = 1;
-      const vertices: [number, number, number][] = [];
-      for (let j = 0; j < segs; j++) {
-        const th = (2 * Math.PI * j) / segs;
-        vertices.push([r * Math.cos(th), r * Math.sin(th), -h]);
-      }
-      for (let j = 0; j < segs; j++) {
-        const th = (2 * Math.PI * j) / segs;
-        vertices.push([r * Math.cos(th), r * Math.sin(th), h]);
-      }
-      const faces: number[][] = [];
-      for (let j = 0; j < segs; j++) {
-        const next = (j + 1) % segs;
-        faces.push([j, next, segs + next, segs + j]);
-      }
-      const bottomCap: number[] = [];
-      const topCap: number[] = [];
-      for (let j = 0; j < segs; j++) {
-        bottomCap.push(segs - 1 - j);
-        topCap.push(segs + j);
-      }
-      faces.push(bottomCap, topCap);
-      return { vertices, faces, shadeSmooth: false };
+      return subdivideTrianglesSphere({ vertices, faces, shadeSmooth: false });
     }
 
     case 'cone': {
       const segs = 20;
       const r = 1;
-      const vertices: [number, number, number][] = [[0, 0, 1]]; // apex 0
+      const vertices: [number, number, number][] = [[0, 0, 1]];
       for (let j = 0; j < segs; j++) {
         const th = (2 * Math.PI * j) / segs;
         vertices.push([r * Math.cos(th), r * Math.sin(th), -1]);
@@ -255,7 +621,7 @@ export function createPrimitiveMesh(type: PrimitiveType): EditableMeshData {
       const halfCyl = 0.65;
       const vertices: [number, number, number][] = [];
       const faces: number[][] = [];
-      vertices.push([0, 0, halfCyl + r]); // top pole
+      vertices.push([0, 0, halfCyl + r]);
       for (let i = 1; i <= capRings; i++) {
         const phi = (Math.PI * 0.5 * i) / capRings;
         const z = halfCyl + r * Math.cos(phi);
@@ -297,13 +663,11 @@ export function createPrimitiveMesh(type: PrimitiveType): EditableMeshData {
     }
 
     case 'monkey': {
-      // Stylized Suzanne-like primate head built from subdivided cranium + snout + ears
       let head = catmullClarkSubdivide(createPrimitiveMesh('cube'), 2);
       for (const v of head.vertices) {
         v[0] *= 0.88;
         v[1] *= 0.82;
         v[2] *= 0.88;
-        // Brow ridge & snout push (-Y is front in Blender!)
         if (v[1] < -0.35 && v[2] > 0.15 && v[2] < 0.55) {
           v[1] -= 0.25;
         }
@@ -312,7 +676,6 @@ export function createPrimitiveMesh(type: PrimitiveType): EditableMeshData {
           v[2] -= 0.08;
         }
       }
-      // Add left & right ear extrusions via merged mini-spheres
       const earBase = catmullClarkSubdivide(createPrimitiveMesh('cube'), 1);
       for (const side of [-1, 1]) {
         const offset = head.vertices.length;
@@ -327,6 +690,37 @@ export function createPrimitiveMesh(type: PrimitiveType): EditableMeshData {
       return head;
     }
   }
+}
+
+function makeNGonCylinder(
+  segs: number,
+  r: number,
+  depth: number,
+  shadeSmooth: boolean
+): EditableMeshData {
+  const h = depth * 0.5;
+  const vertices: [number, number, number][] = [];
+  for (let j = 0; j < segs; j++) {
+    const th = (2 * Math.PI * j) / segs;
+    vertices.push([r * Math.cos(th), r * Math.sin(th), -h]);
+  }
+  for (let j = 0; j < segs; j++) {
+    const th = (2 * Math.PI * j) / segs;
+    vertices.push([r * Math.cos(th), r * Math.sin(th), h]);
+  }
+  const faces: number[][] = [];
+  for (let j = 0; j < segs; j++) {
+    const next = (j + 1) % segs;
+    faces.push([j, next, segs + next, segs + j]);
+  }
+  const bottomCap: number[] = [];
+  const topCap: number[] = [];
+  for (let j = 0; j < segs; j++) {
+    bottomCap.push(segs - 1 - j);
+    topCap.push(segs + j);
+  }
+  faces.push(bottomCap, topCap);
+  return { vertices, faces, shadeSmooth };
 }
 
 function subdivideTrianglesSphere(mesh: EditableMeshData): EditableMeshData {
@@ -368,14 +762,12 @@ export function catmullClarkSubdivide(mesh: EditableMeshData, levels = 1): Edita
   const clamped = Math.max(0, Math.min(3, Math.round(levels)));
 
   for (let step = 0; step < clamped; step++) {
-    if (current.faces.length > 6000) break; // guard mobile performance
+    if (current.faces.length > 6000) break;
     const V = current.vertices;
     const F = current.faces;
 
-    // 1. Face points
     const facePoints: [number, number, number][] = F.map((f) => computeFaceCenter(V, f));
 
-    // 2. Collect edges & incident faces
     interface EdgeInfo {
       v0: number;
       v1: number;
@@ -403,14 +795,12 @@ export function catmullClarkSubdivide(mesh: EditableMeshData, levels = 1): Edita
       }
     });
 
-    // 3. New vertices array: [updated original verts..., face points..., edge points...]
     const newVerts: [number, number, number][] = V.map((orig, vIdx) => {
       const adjF = vertFaces[vIdx];
       const adjE = vertEdges[vIdx];
       const n = adjE.length;
       if (n === 0 || adjF.length === 0) return [...orig];
 
-      // Boundary vertex check
       const boundaryEdges = adjE.filter((e) => e.faces.length < 2);
       if (boundaryEdges.length > 0) {
         let bx = orig[0] * 2;
@@ -427,7 +817,6 @@ export function catmullClarkSubdivide(mesh: EditableMeshData, levels = 1): Edita
         return [bx / weight, by / weight, bz / weight];
       }
 
-      // F average
       let fx = 0, fy = 0, fz = 0;
       for (const fi of adjF) {
         fx += facePoints[fi][0];
@@ -438,7 +827,6 @@ export function catmullClarkSubdivide(mesh: EditableMeshData, levels = 1): Edita
       fy /= adjF.length;
       fz /= adjF.length;
 
-      // R average of edge midpoints
       let rx = 0, ry = 0, rz = 0;
       for (const e of adjE) {
         rx += (V[e.v0][0] + V[e.v1][0]) * 0.5;
@@ -460,9 +848,7 @@ export function catmullClarkSubdivide(mesh: EditableMeshData, levels = 1): Edita
     });
 
     const facePointOffset = newVerts.length;
-    for (const fp of facePoints) {
-      newVerts.push(fp);
-    }
+    for (const fp of facePoints) newVerts.push(fp);
 
     for (const e of edgeMap.values()) {
       const va = V[e.v0];
@@ -483,7 +869,6 @@ export function catmullClarkSubdivide(mesh: EditableMeshData, levels = 1): Edita
       newVerts.push([ex / count, ey / count, ez / count]);
     }
 
-    // 4. Build quad faces
     const newFaces: number[][] = [];
     F.forEach((f, fIdx) => {
       const fpIdx = facePointOffset + fIdx;
@@ -507,7 +892,6 @@ export function catmullClarkSubdivide(mesh: EditableMeshData, levels = 1): Edita
   return current;
 }
 
-/** Flat quad subdivision (keeps sharp corners) */
 export function subdivideFlat(mesh: EditableMeshData, selectedFaces?: number[]): EditableMeshData {
   const out = cloneMeshData(mesh);
   const targetSet =
@@ -550,7 +934,6 @@ export function subdivideFlat(mesh: EditableMeshData, selectedFaces?: number[]):
   return out;
 }
 
-/** Extrude selected faces along their normals */
 export function extrudeFaces(
   mesh: EditableMeshData,
   faceIndices: number[],
@@ -579,10 +962,12 @@ export function extrudeFaces(
         v[1] + n[1] * distance,
         v[2] + n[2] * distance
       ]);
+      if (out.vertexColors && out.vertexColors[vIdx]) {
+        out.vertexColors.push([...out.vertexColors[vIdx]]);
+      }
       return nIdx;
     });
 
-    // Side wall quads
     for (let i = 0; i < f.length; i++) {
       const ni = (i + 1) % f.length;
       nextFaces.push([f[i], f[ni], extrudedLoop[ni], extrudedLoop[i]]);
@@ -595,7 +980,6 @@ export function extrudeFaces(
   return { mesh: out, newFaceIndices: newTopFaces };
 }
 
-/** Inset selected faces */
 export function insetFaces(
   mesh: EditableMeshData,
   faceIndices: number[],
@@ -627,6 +1011,9 @@ export function insetFaces(
         v[1] + (c[1] - v[1]) * t + n[1] * depth,
         v[2] + (c[2] - v[2]) * t + n[2] * depth
       ]);
+      if (out.vertexColors && out.vertexColors[vIdx]) {
+        out.vertexColors.push([...out.vertexColors[vIdx]]);
+      }
       return nIdx;
     });
     for (let i = 0; i < f.length; i++) {
@@ -641,23 +1028,17 @@ export function insetFaces(
   return { mesh: out, newFaceIndices: newInnerFaces };
 }
 
-/** Bevel faces (inset + slight outward lift) */
 export function bevelFaces(
   mesh: EditableMeshData,
   faceIndices: number[],
   amount = 0.18
 ): { mesh: EditableMeshData; newFaceIndices: number[] } {
-  const target =
-    faceIndices.length > 0
-      ? faceIndices
-      : mesh.faces.map((_, idx) => idx);
+  const target = faceIndices.length > 0 ? faceIndices : mesh.faces.map((_, idx) => idx);
   return insetFaces(mesh, target, Math.min(0.45, amount), amount * 0.45);
 }
 
-/** Loop cut across midplane of X, Y, or Z */
 export function loopCutAxis(mesh: EditableMeshData, axis: 0 | 1 | 2 = 2): EditableMeshData {
   const out = cloneMeshData(mesh);
-  // Find bounding midpoint on chosen axis
   let minV = Infinity;
   let maxV = -Infinity;
   for (const v of out.vertices) {
@@ -665,39 +1046,87 @@ export function loopCutAxis(mesh: EditableMeshData, axis: 0 | 1 | 2 = 2): Editab
     if (v[axis] > maxV) maxV = v[axis];
   }
   const planeVal = (minV + maxV) * 0.5;
+  return bisectMeshInternal(out, axis, planeVal, 'both', false).combined;
+}
+
+/** Slices / Cuts a 3D mesh across X, Y, or Z = planeVal, optionally capping the cut cross-section! */
+export function sliceMeshByPlane(
+  mesh: EditableMeshData,
+  axis: 0 | 1 | 2 = 2,
+  planeVal = 0,
+  keep: 'positive' | 'negative' = 'positive',
+  capCut = true
+): EditableMeshData {
+  const res = bisectMeshInternal(mesh, axis, planeVal, keep, capCut);
+  return keep === 'positive' ? res.posMesh : res.negMesh;
+}
+
+/** Splits a 3D mesh into TWO separate capped meshes along an axis plane! */
+export function splitMeshInTwo(
+  mesh: EditableMeshData,
+  axis: 0 | 1 | 2 = 0,
+  planeVal = 0
+): { positive: EditableMeshData; negative: EditableMeshData } {
+  const res = bisectMeshInternal(mesh, axis, planeVal, 'both', true);
+  return { positive: res.posMesh, negative: res.negMesh };
+}
+
+function bisectMeshInternal(
+  mesh: EditableMeshData,
+  axis: 0 | 1 | 2,
+  planeVal: number,
+  mode: 'positive' | 'negative' | 'both',
+  capCut: boolean
+): {
+  combined: EditableMeshData;
+  posMesh: EditableMeshData;
+  negMesh: EditableMeshData;
+} {
+  const verts = mesh.vertices.map((v) => [...v] as [number, number, number]);
   const eps = 1e-4;
   const edgeCutCache = new Map<string, number>();
+  const cutIndices = new Set<number>();
 
   const getCutVert = (a: number, b: number): number => {
     const key = a < b ? `${a}_${b}` : `${b}_${a}`;
     const hit = edgeCutCache.get(key);
     if (hit !== undefined) return hit;
-    const va = out.vertices[a];
-    const vb = out.vertices[b];
+    const va = verts[a];
+    const vb = verts[b];
     const denom = vb[axis] - va[axis];
     const t = Math.abs(denom) < 1e-6 ? 0.5 : (planeVal - va[axis]) / denom;
-    const idx = out.vertices.length;
-    out.vertices.push([
+    const idx = verts.length;
+    verts.push([
       va[0] + (vb[0] - va[0]) * t,
       va[1] + (vb[1] - va[1]) * t,
       va[2] + (vb[2] - va[2]) * t
     ]);
     edgeCutCache.set(key, idx);
+    cutIndices.add(idx);
     return idx;
   };
 
-  const nextFaces: number[][] = [];
-  for (const f of out.faces) {
+  const posFaces: number[][] = [];
+  const negFaces: number[][] = [];
+  const combinedFaces: number[][] = [];
+
+  for (const f of mesh.faces) {
     const polyNeg: number[] = [];
     const polyPos: number[] = [];
     for (let i = 0; i < f.length; i++) {
       const curr = f[i];
       const next = f[(i + 1) % f.length];
-      const dc = out.vertices[curr][axis] - planeVal;
-      const dn = out.vertices[next][axis] - planeVal;
+      const dc = verts[curr][axis] - planeVal;
+      const dn = verts[next][axis] - planeVal;
 
-      if (dc <= eps) polyNeg.push(curr);
-      if (dc >= -eps) polyPos.push(curr);
+      if (dc <= eps) {
+        polyNeg.push(curr);
+        if (Math.abs(dc) <= eps) cutIndices.add(curr);
+      }
+      if (dc >= -eps) {
+        polyPos.push(curr);
+        if (Math.abs(dc) <= eps) cutIndices.add(curr);
+      }
 
       if ((dc < -eps && dn > eps) || (dc > eps && dn < -eps)) {
         const cutIdx = getCutVert(curr, next);
@@ -705,13 +1134,169 @@ export function loopCutAxis(mesh: EditableMeshData, axis: 0 | 1 | 2 = 2): Editab
         polyPos.push(cutIdx);
       }
     }
-    if (polyNeg.length >= 3 && polyPos.length >= 3) {
-      nextFaces.push(polyNeg, polyPos);
-    } else {
-      nextFaces.push(f);
+
+    if (polyNeg.length >= 3) {
+      negFaces.push(polyNeg);
+      combinedFaces.push(polyNeg);
+    }
+    if (polyPos.length >= 3) {
+      posFaces.push(polyPos);
+      combinedFaces.push(polyPos);
     }
   }
-  out.faces = nextFaces;
+
+  // Cap cross-section polygon by angle sorting cut vertices around centroid
+  if (capCut && cutIndices.size >= 3) {
+    const cList = [...cutIndices];
+    let cx = 0, cy = 0, cz = 0;
+    for (const i of cList) {
+      cx += verts[i][0];
+      cy += verts[i][1];
+      cz += verts[i][2];
+    }
+    cx /= cList.length;
+    cy /= cList.length;
+    cz /= cList.length;
+
+    const uAx = ((axis + 1) % 3) as 0 | 1 | 2;
+    const vAx = ((axis + 2) % 3) as 0 | 1 | 2;
+    const cU = axis === 0 ? cy : axis === 1 ? cz : cx;
+    const cV = axis === 0 ? cz : axis === 1 ? cx : cy;
+
+    cList.sort((ia, ib) => {
+      const angA = Math.atan2(verts[ia][vAx] - cV, verts[ia][uAx] - cU);
+      const angB = Math.atan2(verts[ib][vAx] - cV, verts[ib][uAx] - cU);
+      return angA - angB;
+    });
+
+    // Pos cap normal should point in -axis; Neg cap normal should point in +axis
+    negFaces.push([...cList]);
+    posFaces.push([...cList].reverse());
+  }
+
+  void mode;
+  return {
+    combined: { vertices: verts, faces: combinedFaces, shadeSmooth: mesh.shadeSmooth },
+    posMesh: compactMesh({ vertices: verts.map((v) => [...v]), faces: posFaces, shadeSmooth: mesh.shadeSmooth }),
+    negMesh: compactMesh({ vertices: verts.map((v) => [...v]), faces: negFaces, shadeSmooth: mesh.shadeSmooth })
+  };
+}
+
+/** Removes unreferenced vertices after slicing or deleting faces */
+export function compactMesh(mesh: EditableMeshData): EditableMeshData {
+  const remap = new Map<number, number>();
+  const newVerts: [number, number, number][] = [];
+  const newCols: [number, number, number][] = [];
+  const hasCols = Boolean(mesh.vertexColors && mesh.vertexColors.length === mesh.vertices.length);
+
+  const newFaces: number[][] = [];
+  for (const f of mesh.faces) {
+    const nf: number[] = [];
+    for (const vi of f) {
+      let mapped = remap.get(vi);
+      if (mapped === undefined) {
+        mapped = newVerts.length;
+        remap.set(vi, mapped);
+        const orig = mesh.vertices[vi] || [0, 0, 0];
+        newVerts.push([orig[0], orig[1], orig[2]]);
+        if (hasCols) newCols.push([...mesh.vertexColors![vi]]);
+      }
+      nf.push(mapped);
+    }
+    if (nf.length >= 3) newFaces.push(nf);
+  }
+
+  return {
+    vertices: newVerts,
+    faces: newFaces,
+    vertexColors: hasCols ? newCols : undefined,
+    shadeSmooth: mesh.shadeSmooth
+  };
+}
+
+/** Separates disconnected face islands into independent meshes */
+export function separateLooseParts(mesh: EditableMeshData): EditableMeshData[] {
+  if (mesh.faces.length <= 1) return [cloneMeshData(mesh)];
+  const vertToFaces = new Map<number, number[]>();
+  mesh.faces.forEach((f, fi) => {
+    for (const vi of f) {
+      let arr = vertToFaces.get(vi);
+      if (!arr) {
+        arr = [];
+        vertToFaces.set(vi, arr);
+      }
+      arr.push(fi);
+    }
+  });
+
+  const visited = new Uint8Array(mesh.faces.length);
+  const parts: EditableMeshData[] = [];
+
+  for (let i = 0; i < mesh.faces.length; i++) {
+    if (visited[i]) continue;
+    const queue = [i];
+    visited[i] = 1;
+    const islandFaces: number[][] = [];
+    while (queue.length > 0) {
+      const cur = queue.pop()!;
+      const f = mesh.faces[cur];
+      islandFaces.push([...f]);
+      for (const vi of f) {
+        const neighbors = vertToFaces.get(vi) || [];
+        for (const nb of neighbors) {
+          if (!visited[nb]) {
+            visited[nb] = 1;
+            queue.push(nb);
+          }
+        }
+      }
+    }
+    parts.push(
+      compactMesh({
+        vertices: mesh.vertices,
+        faces: islandFaces,
+        vertexColors: mesh.vertexColors,
+        shadeSmooth: mesh.shadeSmooth
+      })
+    );
+  }
+  return parts;
+}
+
+export function displaceMeshNoise(
+  mesh: EditableMeshData,
+  strength = 0.25,
+  freq = 2.4
+): EditableMeshData {
+  const out = cloneMeshData(mesh);
+  const normals = computeVertexNormals(out);
+  out.vertices.forEach((v, i) => {
+    const n =
+      Math.sin(v[0] * freq + 1.1) *
+      Math.cos(v[1] * freq - 0.7) *
+      Math.sin(v[2] * freq + 0.3);
+    v[0] += normals[i][0] * n * strength;
+    v[1] += normals[i][1] * n * strength;
+    v[2] += normals[i][2] * n * strength;
+  });
+  return out;
+}
+
+export function taperMeshZ(mesh: EditableMeshData, topScale = 0.35): EditableMeshData {
+  const out = cloneMeshData(mesh);
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const v of out.vertices) {
+    if (v[2] < minZ) minZ = v[2];
+    if (v[2] > maxZ) maxZ = v[2];
+  }
+  const span = Math.max(0.001, maxZ - minZ);
+  for (const v of out.vertices) {
+    const t = (v[2] - minZ) / span;
+    const s = 1 + (topScale - 1) * t;
+    v[0] *= s;
+    v[1] *= s;
+  }
   return out;
 }
 
@@ -720,7 +1305,7 @@ export function deleteFaces(mesh: EditableMeshData, faceIndices: number[]): Edit
   if (faceIndices.length === 0) return out;
   const drop = new Set(faceIndices);
   out.faces = out.faces.filter((_, i) => !drop.has(i));
-  return out;
+  return compactMesh(out);
 }
 
 /** Non-destructive Modifier Pipeline */
@@ -754,7 +1339,6 @@ export function evaluateMeshWithModifiers(
           }
           const fCount = mesh.faces.length;
           for (let i = 0; i < fCount; i++) {
-            // Reverse winding for mirrored parity
             const rev = [...mesh.faces[i]].reverse().map((idx) => idx + vCount);
             mesh.faces.push(rev);
           }
@@ -793,18 +1377,14 @@ export function evaluateMeshWithModifiers(
           ]);
         }
         const origFaces = mesh.faces.map((f) => [...f]);
-        // Find boundary edges so open shells get clean rim walls
         const edgeCount = new Map<string, [number, number]>();
         for (const f of origFaces) {
           for (let i = 0; i < f.length; i++) {
             const a = f[i];
             const b = f[(i + 1) % f.length];
             const key = a < b ? `${a}_${b}` : `${b}_${a}`;
-            if (edgeCount.has(key)) {
-              edgeCount.delete(key); // shared interior edge
-            } else {
-              edgeCount.set(key, [a, b]);
-            }
+            if (edgeCount.has(key)) edgeCount.delete(key);
+            else edgeCount.set(key, [a, b]);
           }
         }
         for (const f of origFaces) {
@@ -890,14 +1470,96 @@ function buildWireframeStrutMesh(mesh: EditableMeshData, radius: number): Editab
   return { vertices: verts, faces, shadeSmooth: false };
 }
 
+/** Computes bounding-box-normalized UV coordinates for any vertex & face normal (Roblox & PBR ready!) */
+export function computeProjectedUV(
+  v: [number, number, number],
+  fn: [number, number, number],
+  bounds: { min: [number, number, number]; span: [number, number, number] },
+  mode: UVProjectionMode = 'box',
+  repeatX = 1,
+  repeatY = 1
+): [number, number] {
+  const nx = (v[0] - bounds.min[0]) / bounds.span[0];
+  const ny = (v[1] - bounds.min[1]) / bounds.span[1];
+  const nz = (v[2] - bounds.min[2]) / bounds.span[2];
+
+  let u = 0;
+  let w = 0;
+
+  if (mode === 'planar') {
+    u = nx;
+    w = ny;
+  } else if (mode === 'spherical') {
+    const cx = nx - 0.5;
+    const cy = ny - 0.5;
+    const cz = nz - 0.5;
+    const r = Math.hypot(cx, cy, cz) || 1;
+    u = 0.5 + Math.atan2(cy, cx) / (2 * Math.PI);
+    w = 0.5 + Math.asin(Math.max(-1, Math.min(1, cz / r))) / Math.PI;
+  } else if (mode === 'cylindrical') {
+    const cx = nx - 0.5;
+    const cy = ny - 0.5;
+    u = 0.5 + Math.atan2(cy, cx) / (2 * Math.PI);
+    w = nz;
+  } else {
+    // Smart Box / Triplanar projection based on dominant face normal axis
+    const ax = Math.abs(fn[0]);
+    const ay = Math.abs(fn[1]);
+    const az = Math.abs(fn[2]);
+    if (az >= ax && az >= ay) {
+      u = fn[2] >= 0 ? nx : 1 - nx;
+      w = ny;
+    } else if (ax >= ay) {
+      u = fn[0] >= 0 ? ny : 1 - ny;
+      w = nz;
+    } else {
+      u = fn[1] >= 0 ? 1 - nx : nx;
+      w = nz;
+    }
+  }
+
+  return [u * repeatX, w * repeatY];
+}
+
+export function computeMeshBounds(mesh: EditableMeshData): {
+  min: [number, number, number];
+  max: [number, number, number];
+  span: [number, number, number];
+} {
+  if (mesh.vertices.length === 0) {
+    return { min: [-1, -1, -1], max: [1, 1, 1], span: [2, 2, 2] };
+  }
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  for (const v of mesh.vertices) {
+    for (let k = 0; k < 3; k++) {
+      if (v[k] < min[k]) min[k] = v[k];
+      if (v[k] > max[k]) max[k] = v[k];
+    }
+  }
+  return {
+    min,
+    max,
+    span: [
+      Math.max(1e-4, max[0] - min[0]),
+      Math.max(1e-4, max[1] - min[1]),
+      Math.max(1e-4, max[2] - min[2])
+    ]
+  };
+}
+
 export interface BuiltThreeGeometries {
   surfaceGeometry: THREE.BufferGeometry;
   polygonWireGeometry: THREE.BufferGeometry;
   triangleToFaceIndex: number[];
 }
 
-/** Converts polygonal EditableMeshData into Three.js BufferGeometries + face pick map */
-export function buildThreeGeometries(mesh: EditableMeshData): BuiltThreeGeometries {
+export function buildThreeGeometries(
+  mesh: EditableMeshData,
+  uvMode: UVProjectionMode = 'box',
+  repeatX = 1,
+  repeatY = 1
+): BuiltThreeGeometries {
   const positions: number[] = [];
   const normals: number[] = [];
   const colors: number[] = [];
@@ -905,28 +1567,26 @@ export function buildThreeGeometries(mesh: EditableMeshData): BuiltThreeGeometri
   const triangleToFaceIndex: number[] = [];
 
   const smoothNormals = mesh.shadeSmooth ? computeVertexNormals(mesh) : null;
-  const hasVertexColors = Boolean(mesh.vertexColors && mesh.vertexColors.length === mesh.vertices.length);
+  const hasVertexColors = Boolean(
+    mesh.vertexColors && mesh.vertexColors.length === mesh.vertices.length
+  );
+  const bounds = computeMeshBounds(mesh);
 
   mesh.faces.forEach((face, fIdx) => {
     if (face.length < 3) return;
     const fn = computeFaceNormal(mesh.vertices, face);
-    // Fan triangulation from face[0]
     for (let i = 1; i < face.length - 1; i++) {
       const tri = [face[0], face[i], face[i + 1]];
-      const triUVs: [number, number][] = [
-        [0, 0],
-        [1, i === 1 ? 0 : 1],
-        [i === 1 ? 1 : 0, 1]
-      ];
-      tri.forEach((vIdx, k) => {
+      for (const vIdx of tri) {
         const v = mesh.vertices[vIdx] || [0, 0, 0];
         positions.push(v[0], v[1], v[2]);
         const n = smoothNormals ? smoothNormals[vIdx] : fn;
         normals.push(n[0], n[1], n[2]);
         const vc = hasVertexColors ? mesh.vertexColors![vIdx] : [1, 1, 1];
         colors.push(vc[0], vc[1], vc[2]);
-        uvs.push(triUVs[k][0], triUVs[k][1]);
-      });
+        const [u, w] = computeProjectedUV(v, fn, bounds, uvMode, repeatX, repeatY);
+        uvs.push(u, w);
+      }
       triangleToFaceIndex.push(fIdx);
     }
   });
@@ -939,7 +1599,6 @@ export function buildThreeGeometries(mesh: EditableMeshData): BuiltThreeGeometri
   surfaceGeometry.computeBoundingSphere();
   surfaceGeometry.computeBoundingBox();
 
-  // Polygon wireframe geometry (only true polygon edges — no internal triangulation diagonals!)
   const wirePositions: number[] = [];
   const seenEdges = new Set<string>();
   for (const face of mesh.faces) {

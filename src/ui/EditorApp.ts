@@ -1,29 +1,44 @@
-import { Icons } from '../icons/blenderIcons';
 import {
+  exportSceneToDAE,
+  exportSceneToMTL,
   exportSceneToOBJ,
+  exportSceneToPLY,
+  exportSceneToRBXMX,
   exportSceneToSTL,
   exportThreeGroupToGLB,
-  parseOBJToMesh,
-  parseSTLToMesh,
+  exportThreeGroupToGLTF,
+  exportThreeGroupToUSDZ,
+  importAny3DFile,
   saveDataUrlPNG,
   saveOrShareFile,
-  serializeProject
+  serializeProject,
+  type OBJExportOptions
 } from '../engine/Exporters';
 import { ModixEngine } from '../engine/ModixEngine';
+import { Icons } from '../icons/blenderIcons';
 import type {
   ActiveToolId,
   InteractionMode,
+  PrimitiveType,
+  SceneObjectData,
   TransformOrientation,
   ViewportShading,
   WorkspaceId
 } from '../types/scene';
+import { AIChatPanel } from './AIChatPanel';
 import {
   openDropdownMenu,
+  openExportHubModal,
   openRenderResultModal,
+  openSliceMeshModal,
   openSplashModal,
-  showToast
+  openTextPromptModal,
+  showToast,
+  type DropdownItem,
+  type ExportFormatChoice
 } from './Modals';
 import { PropertiesPanel } from './PropertiesPanel';
+import { openTextureStudioModal } from './TexturePaintModal';
 import { TimelinePanel } from './TimelinePanel';
 import { ViewportOverlays } from './ViewportOverlays';
 
@@ -49,16 +64,21 @@ export class EditorApp {
   private vpHeaderEl!: HTMLElement;
   private vpStageEl!: HTMLElement;
   private leftToolbarEl!: HTMLElement;
+  private rightColEl!: HTMLElement;
+  private outlinerEl!: HTMLElement;
+  private outlinerResizerEl!: HTMLElement;
   private outlinerTreeEl!: HTMLElement;
   private fileInputEl!: HTMLInputElement;
 
   private overlays!: ViewportOverlays;
   private propsPanel!: PropertiesPanel;
   private timelinePanel!: TimelinePanel;
+  private aiPanel!: AIChatPanel;
 
   constructor(root: HTMLElement) {
     this.root = root;
     this.engine = new ModixEngine();
+    this.aiPanel = new AIChatPanel(this.engine, showToast);
     this.mountUI();
   }
 
@@ -79,6 +99,9 @@ export class EditorApp {
           <nav class="modix-workspaces" id="modix-ws-tabs"></nav>
 
           <div class="modix-topbar-right">
+            <button type="button" class="modix-ai-top-btn" id="btn-open-ai" title="Abrir Chat com IA ou Agente Multi-IA 3D">
+              <span class="ai-star">✦</span><span>IA / Agente</span>
+            </button>
             <button type="button" class="modix-scene-pill" id="btn-scene-pill">
               ${Icons.scene}<span id="lbl-scene-name">Scene</span><span class="pill-chevron">${Icons.chevronDown}</span>
             </button>
@@ -99,32 +122,46 @@ export class EditorApp {
             <div class="modix-timeline" id="modix-timeline"></div>
           </div>
 
-          <!-- RIGHT SIDEBAR (Outliner + Properties) -->
-          <aside class="modix-right-col">
-            <section class="modix-outliner">
+          <!-- RIGHT SIDEBAR (Resizable Explorer/Outliner + Properties) -->
+          <aside class="modix-right-col" id="modix-right-col">
+            <section class="modix-outliner" id="modix-outliner">
               <div class="panel-subhdr">
-                <button type="button" class="hdr-pill" style="padding:0 5px;height:20px;">
+                <button type="button" class="hdr-pill" id="outliner-editor-btn" style="padding:0 5px;height:20px;" title="Explorer / Outliner">
                   ${Icons.editorOutliner}${Icons.chevronDown}
                 </button>
-                <button type="button" class="hdr-pill" style="padding:0 5px;height:20px;">
-                  ${Icons.viewLayer}${Icons.chevronDown}
+                <button type="button" class="hdr-pill" id="outliner-new-group-btn" style="padding:0 6px;height:20px;" title="Criar Novo Grupo / Coleção">
+                  ${Icons.collectionBox}<span style="font-size:10px;">+</span>
                 </button>
                 <div class="search-pill">
                   ${Icons.searchGlass}
                   <input type="text" id="outliner-search" aria-label="Search Outliner" />
                 </div>
-                <button type="button" class="hdr-menu-btn" id="outliner-filter-btn" style="padding:0 4px;">
+                <button type="button" class="hdr-menu-btn" id="outliner-filter-btn" style="padding:0 4px;" title="Ações do Explorer (Copiar, Colar, Unir, Grupos)">
                   ${Icons.filterFunnel}
                 </button>
               </div>
               <div class="outliner-tree" id="outliner-tree"></div>
             </section>
 
+            <!-- DRAG HANDLE UNDER EXPLORER TO RESIZE UP / DOWN -->
+            <div
+              class="outliner-resizer"
+              id="outliner-resizer"
+              title="Segure aqui embaixo do Explorer e puxe para cima ou para baixo"
+            >
+              <span class="outliner-resizer-grip"></span>
+            </div>
+
             <section class="modix-properties" id="modix-properties"></section>
           </aside>
         </div>
 
-        <input type="file" id="modix-file-input" accept=".obj,.stl,.modix,.json" style="display:none;" />
+        <input
+          type="file"
+          id="modix-file-input"
+          accept=".obj,.fbx,.glb,.gltf,.dae,.stl,.ply,.3mf,.amf,.svg,.off,.rbxmx,.modix,.json,.png,.jpg,.jpeg,.webp"
+          style="display:none;"
+        />
       </div>
     `;
 
@@ -132,20 +169,22 @@ export class EditorApp {
     this.vpHeaderEl = this.root.querySelector('#modix-vp-header')!;
     this.vpStageEl = this.root.querySelector('#modix-vp-stage')!;
     this.leftToolbarEl = this.root.querySelector('#vp-left-toolbar')!;
+    this.rightColEl = this.root.querySelector('#modix-right-col')!;
+    this.outlinerEl = this.root.querySelector('#modix-outliner')!;
+    this.outlinerResizerEl = this.root.querySelector('#outliner-resizer')!;
     this.outlinerTreeEl = this.root.querySelector('#outliner-tree')!;
     this.fileInputEl = this.root.querySelector('#modix-file-input')!;
 
-    // Mount Three.js 3D Engine inside Viewport Stage
     this.engine.mount(this.vpStageEl);
 
-    // Mount Sub-Panels
     this.overlays = new ViewportOverlays(this.engine, this.vpStageEl);
     this.propsPanel = new PropertiesPanel(
       this.engine,
       this.root.querySelector('#modix-properties')!,
       {
         onRenderRequest: () => this.triggerRenderModal(),
-        onExportRequest: (fmt) => void this.handleExport(fmt)
+        onExportRequest: (fmt) => void this.handleExport(fmt),
+        onOpenExportHub: () => this.openExportHub()
       }
     );
     this.timelinePanel = new TimelinePanel(
@@ -154,6 +193,7 @@ export class EditorApp {
     );
 
     this.bindTopBarEvents();
+    this.bindExplorerResizer();
     this.bindOutlinerSearchAndImport();
     this.bindKeyboardShortcuts();
 
@@ -161,63 +201,125 @@ export class EditorApp {
     this.syncAll();
   }
 
+  /** Touch & Mouse vertical drag handle right under the Explorer/Outliner */
+  private bindExplorerResizer(): void {
+    let dragging = false;
+    let startY = 0;
+    let startHeight = 0;
+
+    this.outlinerResizerEl.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.outlinerResizerEl.setPointerCapture(e.pointerId);
+      dragging = true;
+      startY = e.clientY;
+      startHeight = this.outlinerEl.getBoundingClientRect().height;
+      this.outlinerResizerEl.classList.add('dragging');
+    });
+
+    this.outlinerResizerEl.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const colHeight = this.rightColEl.getBoundingClientRect().height;
+      const minH = 62;
+      const maxH = Math.max(120, colHeight - 92);
+      const dy = e.clientY - startY;
+      const nextH = Math.max(minH, Math.min(maxH, Math.round(startHeight + dy)));
+      this.outlinerEl.style.flex = '0 0 auto';
+      this.outlinerEl.style.minHeight = `${minH}px`;
+      this.outlinerEl.style.height = `${nextH}px`;
+    });
+
+    const stopDrag = () => {
+      if (!dragging) return;
+      dragging = false;
+      this.outlinerResizerEl.classList.remove('dragging');
+    };
+
+    this.outlinerResizerEl.addEventListener('pointerup', stopDrag);
+    this.outlinerResizerEl.addEventListener('pointercancel', stopDrag);
+  }
+
   private bindTopBarEvents(): void {
+    this.root.querySelector('#btn-open-ai')?.addEventListener('click', () => {
+      this.aiPanel.toggle();
+    });
+
     const brandBtn = this.root.querySelector<HTMLElement>('#modix-app-menu-btn')!;
     brandBtn.addEventListener('click', () => {
       openDropdownMenu(brandBtn, [
         {
-          label: 'Splash Screen / About Modix 3D',
+          label: 'Splash Screen / Sobre Modix 3D',
           onClick: () => this.showSplash()
         },
-        { separator: true },
-        { sectionTitle: 'File & Project' },
         {
-          label: 'New Startup Scene',
+          label: '✦ Abrir Chat IA / Agente Multi-IA',
+          onClick: () => this.aiPanel.open()
+        },
+        { separator: true },
+        { sectionTitle: 'Arquivo & Importação Universal' },
+        {
+          label: 'Nova Cena Padrão',
           shortcut: 'Ctrl+N',
           onClick: () => this.resetScene()
         },
         {
-          label: 'Import 3D File (.OBJ / .STL / .MODIX)...',
+          label: 'Importar 3D (.OBJ, .FBX, .GLB, .DAE, .STL, .PLY, .3MF, .SVG, .RBXMX)...',
           onClick: () => this.fileInputEl.click()
         },
         {
-          label: 'Save Project (.MODIX)',
+          label: 'Estúdio de Desenho & Pintura de Textura 2D',
+          onClick: () => openTextureStudioModal(this.engine, showToast)
+        },
+        {
+          label: 'Salvar Projeto (.MODIX)',
           shortcut: 'Ctrl+S',
           onClick: () => void this.handleExport('modix')
         },
         { separator: true },
-        { sectionTitle: 'Export 3D Mesh' },
+        { sectionTitle: 'Exportar Modelo 3D & Roblox Studio' },
         {
-          label: 'Export Wavefront (.OBJ)',
-          onClick: () => void this.handleExport('obj')
+          label: '🚀 Central de Exportação Completa...',
+          onClick: () => this.openExportHub()
         },
         {
-          label: 'Export 3D Print (.STL)',
+          label: '🎮 Exportar .OBJ p/ Roblox Studio (Y-Up + UVs)',
+          onClick: () => void this.handleExport('obj_roblox')
+        },
+        {
+          label: '🧱 Exportar .RBXMX (Modelo Roblox Parts)',
+          onClick: () => void this.handleExport('rbxmx')
+        },
+        {
+          label: '📦 Exportar glTF Binário (.GLB + Texturas)',
+          onClick: () => void this.handleExport('glb')
+        },
+        {
+          label: '🖨 Exportar Impressão 3D (.STL)',
           onClick: () => void this.handleExport('stl')
         },
         {
-          label: 'Export glTF Binary (.GLB)',
-          onClick: () => void this.handleExport('glb')
+          label: '📱 Exportar Apple AR (.USDZ)',
+          onClick: () => void this.handleExport('usdz')
         },
         { separator: true },
         {
-          label: 'Render Image (PNG)',
+          label: 'Renderizar Imagem (PNG)',
           shortcut: 'F12',
           onClick: () => this.triggerRenderModal()
         },
         { separator: true },
         {
-          label: 'Undo',
+          label: 'Desfazer (Undo)',
           shortcut: 'Ctrl+Z',
           onClick: () => {
-            if (this.engine.undo()) showToast('Undo');
+            if (this.engine.undo()) showToast('Desfeito (Undo)');
           }
         },
         {
-          label: 'Redo',
+          label: 'Refazer (Redo)',
           shortcut: 'Ctrl+Y',
           onClick: () => {
-            if (this.engine.redo()) showToast('Redo');
+            if (this.engine.redo()) showToast('Refeito (Redo)');
           }
         }
       ]);
@@ -225,18 +327,28 @@ export class EditorApp {
 
     this.root.querySelector('#btn-scene-pill')?.addEventListener('click', (e) => {
       openDropdownMenu(e.currentTarget as HTMLElement, [
-        { label: 'Scene (Default)', onClick: () => { this.engine.state.sceneName = 'Scene'; this.engine.notify(); } },
-        { label: 'Reset Factory Startup', onClick: () => this.resetScene() }
+        {
+          label: 'Renomear Cena...',
+          onClick: () =>
+            openTextPromptModal({
+              title: 'Renomear Cena',
+              label: 'Nome da cena:',
+              initialValue: this.engine.state.sceneName,
+              onConfirm: (v) => {
+                this.engine.state.sceneName = v;
+                this.engine.notify();
+              }
+            })
+        },
+        { label: 'Resetar Cena Inicial', onClick: () => this.resetScene() }
       ]);
     });
 
     this.root.querySelector('#btn-viewlayer-pill')?.addEventListener('click', (e) => {
       openDropdownMenu(e.currentTarget as HTMLElement, [
-        { label: 'ViewLayer (Main)', onClick: () => {} },
-        {
-          label: 'Render ViewLayer PNG',
-          onClick: () => this.triggerRenderModal()
-        }
+        { label: 'ViewLayer (Principal)', onClick: () => {} },
+        { label: 'Central de Exportação 3D', onClick: () => this.openExportHub() },
+        { label: 'Renderizar PNG', onClick: () => this.triggerRenderModal() }
       ]);
     });
   }
@@ -265,10 +377,12 @@ export class EditorApp {
       case 'UV Editing':
         st.mode = 'EDIT';
         st.shading = 'SOLID';
+        st.activePropertiesTab = 'texture';
         break;
       case 'Texture Paint':
         st.mode = 'TEXTURE_PAINT';
         st.shading = 'SOLID';
+        st.activePropertiesTab = 'texture';
         break;
       case 'Shading':
         st.mode = 'OBJECT';
@@ -400,7 +514,7 @@ export class EditorApp {
       </div>
     `;
 
-    // Bind Mode Selector
+    // Mode Selector
     this.vpHeaderEl.querySelector('#vp-mode-btn')?.addEventListener('click', (e) => {
       const setMode = (m: InteractionMode) => {
         st.mode = m;
@@ -416,11 +530,15 @@ export class EditorApp {
         { label: 'Object Mode', shortcut: 'Tab', onClick: () => setMode('OBJECT') },
         { label: 'Edit Mode', shortcut: 'Tab', onClick: () => setMode('EDIT') },
         { label: 'Sculpt Mode', onClick: () => setMode('SCULPT') },
-        { label: 'Texture Paint', onClick: () => setMode('TEXTURE_PAINT') }
+        { label: 'Texture Paint (Pintar 3D)', onClick: () => setMode('TEXTURE_PAINT') },
+        { separator: true },
+        {
+          label: '🎨 Estúdio de Desenho de Texturas 2D...',
+          onClick: () => openTextureStudioModal(this.engine, showToast)
+        }
       ]);
     });
 
-    // Edit Select Mode (Vertex / Edge / Face)
     this.vpHeaderEl.querySelectorAll<HTMLButtonElement>('[data-esel]').forEach((b) => {
       b.addEventListener('click', () => {
         st.editSelectMode = b.dataset.esel as 'VERTEX' | 'EDGE' | 'FACE';
@@ -447,7 +565,7 @@ export class EditorApp {
     this.vpHeaderEl.querySelector('#menu-select')?.addEventListener('click', (e) => {
       openDropdownMenu(e.currentTarget as HTMLElement, [
         {
-          label: 'All',
+          label: 'Selecionar Tudo (All)',
           shortcut: 'A',
           onClick: () => {
             if (st.mode === 'EDIT') {
@@ -465,7 +583,17 @@ export class EditorApp {
           }
         },
         {
-          label: 'None',
+          label: 'Selecionar Apenas Malhas (Meshes)',
+          onClick: () => {
+            const meshes = st.objects.filter((o) => o.kind === 'MESH').map((o) => o.id);
+            st.selectedIds = meshes;
+            st.activeObjectId = meshes[0] || null;
+            this.engine.rebuildSceneObjects();
+            this.engine.notify();
+          }
+        },
+        {
+          label: 'Limpar Seleção (None)',
           shortcut: 'Alt+A',
           onClick: () => {
             st.selectedIds = [];
@@ -476,7 +604,7 @@ export class EditorApp {
           }
         },
         {
-          label: 'Invert',
+          label: 'Inverter Seleção',
           shortcut: 'Ctrl+I',
           onClick: () => {
             const cur = new Set(st.selectedIds);
@@ -489,67 +617,75 @@ export class EditorApp {
       ]);
     });
 
-    // Add Menu
+    // Expanded Add Menu (All 24 3D Primitives + Groups + Import!)
     this.vpHeaderEl.querySelector('#menu-add')?.addEventListener('click', (e) => {
+      const addP = (t: PrimitiveType) => {
+        const created = this.engine.addPrimitive(t);
+        showToast(`Adicionado: ${created.name}`);
+      };
       openDropdownMenu(e.currentTarget as HTMLElement, [
-        { sectionTitle: 'Mesh Primitives' },
-        { label: 'Cube', onClick: () => this.engine.addPrimitive('cube') },
-        { label: 'Plane', onClick: () => this.engine.addPrimitive('plane') },
-        { label: 'UV Sphere', onClick: () => this.engine.addPrimitive('uv_sphere') },
-        { label: 'Ico Sphere', onClick: () => this.engine.addPrimitive('ico_sphere') },
-        { label: 'Cylinder', onClick: () => this.engine.addPrimitive('cylinder') },
-        { label: 'Cone', onClick: () => this.engine.addPrimitive('cone') },
-        { label: 'Torus', onClick: () => this.engine.addPrimitive('torus') },
-        { label: 'Capsule', onClick: () => this.engine.addPrimitive('capsule') },
-        { label: 'Suzanne (Monkey)', onClick: () => this.engine.addPrimitive('monkey') },
+        { sectionTitle: 'Formas Básicas 3D' },
+        { label: 'Cube (Cubo)', onClick: () => addP('cube') },
+        { label: 'Plane (Plano)', onClick: () => addP('plane') },
+        { label: 'Grid (Grade Subdividida)', onClick: () => addP('grid') },
+        { label: 'UV Sphere (Esfera)', onClick: () => addP('uv_sphere') },
+        { label: 'Ico Sphere (Icoesfera)', onClick: () => addP('ico_sphere') },
+        { label: 'Cylinder (Cilindro)', onClick: () => addP('cylinder') },
+        { label: 'Cone', onClick: () => addP('cone') },
+        { label: 'Torus (Rosquinha)', onClick: () => addP('torus') },
+        { label: 'Capsule (Cápsula)', onClick: () => addP('capsule') },
         { separator: true },
-        { sectionTitle: 'Scene Objects' },
-        { label: 'Light (Point)', onClick: () => this.engine.addSceneNonMesh('LIGHT') },
+        { sectionTitle: 'Arquitetura & Roblox Studio' },
+        { label: 'Wedge (Rampa Roblox)', onClick: () => addP('wedge') },
+        { label: 'Corner Wedge (Rampa de Canto)', onClick: () => addP('corner_wedge') },
+        { label: 'Pyramid (Pirâmide)', onClick: () => addP('pyramid') },
+        { label: 'Prism (Prisma Triangular)', onClick: () => addP('prism') },
+        { label: 'Hexagon (Coluna Hexagonal)', onClick: () => addP('hex_cylinder') },
+        { label: 'Pipe (Tubo Oco)', onClick: () => addP('pipe') },
+        { label: 'Arch (Arco / Portal)', onClick: () => addP('arch') },
+        { label: 'Stairs (Escada)', onClick: () => addP('stairs') },
+        { separator: true },
+        { sectionTitle: 'Formas Especiais & Arte' },
+        { label: 'Star (Estrela 3D)', onClick: () => addP('star') },
+        { label: 'Gear (Engrenagem)', onClick: () => addP('gear') },
+        { label: 'Ring (Anel)', onClick: () => addP('ring') },
+        { label: 'Crystal (Cristal / Diamante)', onClick: () => addP('crystal') },
+        { label: 'Heart (Coração 3D)', onClick: () => addP('heart') },
+        { label: 'Torus Knot (Nó 3D)', onClick: () => addP('torus_knot') },
+        { label: 'Suzanne (Macaco)', onClick: () => addP('monkey') },
+        { separator: true },
+        { sectionTitle: 'Cena, Grupos & Arquivos' },
+        { label: '📁 Novo Grupo / Coleção...', onClick: () => this.promptCreateGroup() },
+        { label: 'Light (Ponto de Luz)', onClick: () => this.engine.addSceneNonMesh('LIGHT') },
         { label: 'Camera', onClick: () => this.engine.addSceneNonMesh('CAMERA') },
-        { label: 'Empty (Axes)', onClick: () => this.engine.addSceneNonMesh('EMPTY') }
+        { label: 'Empty (Eixos)', onClick: () => this.engine.addSceneNonMesh('EMPTY') },
+        { label: '📂 Importar Arquivo 3D...', onClick: () => this.fileInputEl.click() }
       ]);
     });
 
-    // Object / Mesh Menu
+    // Expanded Object / Mesh Menu (Rename, Copy, Paste, Cut, Join, Group, Slice 3D, Texture, Delete)
     this.vpHeaderEl.querySelector('#menu-object')?.addEventListener('click', (e) => {
       if (st.mode === 'EDIT') {
         openDropdownMenu(e.currentTarget as HTMLElement, [
-          { sectionTitle: 'Mesh Modeling' },
+          { sectionTitle: 'Modelagem de Malha' },
           { label: 'Extrude Faces', shortcut: 'E', onClick: () => this.engine.performEditMeshOp('extrude') },
           { label: 'Inset Faces', shortcut: 'I', onClick: () => this.engine.performEditMeshOp('inset') },
           { label: 'Bevel Faces', shortcut: 'Ctrl+B', onClick: () => this.engine.performEditMeshOp('bevel') },
           { label: 'Subdivide Quads', onClick: () => this.engine.performEditMeshOp('subdivide') },
           { label: 'Catmull-Clark Smooth', onClick: () => this.engine.performEditMeshOp('subsurf') },
           { label: 'Loop Cut (Mid Z)', shortcut: 'Ctrl+R', onClick: () => this.engine.performEditMeshOp('loop_cut') },
+          {
+            label: '✂ Recortar / Fatiar Malha 3D...',
+            onClick: () => this.promptSliceActiveMesh()
+          },
           { separator: true },
-          { label: 'Delete Selected Faces', shortcut: 'X', onClick: () => this.engine.performEditMeshOp('delete_faces') }
+          { label: 'Deletar Faces Selecionadas', shortcut: 'X', onClick: () => this.engine.performEditMeshOp('delete_faces') }
         ]);
       } else {
-        openDropdownMenu(e.currentTarget as HTMLElement, [
-          { label: 'Duplicate Objects', shortcut: 'Shift+D', onClick: () => this.engine.duplicateSelected() },
-          { label: 'Delete', shortcut: 'X', onClick: () => this.engine.deleteSelected() },
-          { separator: true },
-          { label: 'Shade Smooth', onClick: () => this.engine.performEditMeshOp('shade_smooth') },
-          { label: 'Shade Flat', onClick: () => this.engine.performEditMeshOp('shade_flat') },
-          { separator: true },
-          {
-            label: 'Snap Object to Origin',
-            onClick: () => {
-              const active = this.engine.getActiveObject();
-              if (active) {
-                this.engine.pushUndoSnapshot();
-                active.location = [0, 0, 0];
-                this.engine.syncObjectTransformsOnly();
-                this.engine.rebuildGizmo();
-                this.engine.notify();
-              }
-            }
-          }
-        ]);
+        openDropdownMenu(e.currentTarget as HTMLElement, this.buildObjectOperationsMenu());
       }
     });
 
-    // Orientation, Pivot, Snap, Proportional, Overlays, X-Ray, Shading
     this.vpHeaderEl.querySelector('#btn-orient')?.addEventListener('click', (e) => {
       const setOr = (o: TransformOrientation) => {
         st.orientation = o;
@@ -600,6 +736,161 @@ export class EditorApp {
         this.engine.rebuildSceneObjects();
         this.engine.notify();
       });
+    });
+  }
+
+  private buildObjectOperationsMenu(specificObj?: SceneObjectData): DropdownItem[] {
+    const targetObj = specificObj || this.engine.getActiveObject();
+    const selCount = this.engine.state.selectedIds.length;
+    const moveGroupItems: DropdownItem[] = this.engine.state.collections.map((c) => ({
+      label: `↳ Mover para "${c.name}"`,
+      onClick: () => {
+        const ids = specificObj
+          ? [...new Set([...this.engine.state.selectedIds, specificObj.id])]
+          : this.engine.state.selectedIds;
+        this.engine.moveObjectsToCollection(ids, c.name);
+        showToast(`Movido para grupo "${c.name}"`);
+      }
+    }));
+
+    return [
+      { sectionTitle: targetObj ? `Objeto: ${targetObj.name}` : 'Operações de Objeto' },
+      {
+        label: '✎ Renomear...',
+        shortcut: 'F2',
+        onClick: () => {
+          if (!targetObj) return;
+          openTextPromptModal({
+            title: 'Renomear Objeto',
+            label: 'Novo nome:',
+            initialValue: targetObj.name,
+            onConfirm: (val) => {
+              this.engine.renameObject(targetObj.id, val);
+              showToast(`Renomeado para "${val}"`);
+            }
+          });
+        }
+      },
+      {
+        label: '📋 Copiar (Copy)',
+        shortcut: 'Ctrl+C',
+        onClick: () => {
+          if (specificObj && !this.engine.state.selectedIds.includes(specificObj.id)) {
+            this.engine.selectObject(specificObj.id, false);
+          }
+          const n = this.engine.copySelected();
+          showToast(`${n} objeto(s) copiado(s)`);
+        }
+      },
+      {
+        label: '✂ Recortar (Cut p/ Clipboard)',
+        shortcut: 'Ctrl+X',
+        onClick: () => {
+          if (specificObj && !this.engine.state.selectedIds.includes(specificObj.id)) {
+            this.engine.selectObject(specificObj.id, false);
+          }
+          const n = this.engine.cutSelected();
+          showToast(`${n} objeto(s) recortado(s)`);
+        }
+      },
+      {
+        label: '📥 Colar (Paste)',
+        shortcut: 'Ctrl+V',
+        onClick: () => {
+          const p = this.engine.pasteClipboard();
+          showToast(p.length ? `${p.length} objeto(s) colado(s)` : 'Nada copiado ainda');
+        }
+      },
+      {
+        label: 'Duplicar',
+        shortcut: 'Shift+D',
+        onClick: () => this.engine.duplicateSelected()
+      },
+      { separator: true },
+      { sectionTitle: 'Malha, União & Corte 3D' },
+      {
+        label: `🔗 Unir Malhas Selecionadas (${selCount})`,
+        shortcut: 'Ctrl+J',
+        onClick: () => {
+          const res = this.engine.joinSelected();
+          showToast(
+            res
+              ? `Objetos unidos em "${res.name}"!`
+              : 'Selecione 2 ou mais objetos Mesh (toque no ⊕ no Explorer ou Shift+Clique) para unir!'
+          );
+        }
+      },
+      {
+        label: '🔪 Recortar / Fatiar Malha 3D...',
+        onClick: () => this.promptSliceActiveMesh()
+      },
+      {
+        label: 'Separar Partes Soltas',
+        onClick: () => {
+          const parts = this.engine.separateSelectedByLooseParts();
+          showToast(parts.length > 1 ? `Separado em ${parts.length} partes!` : 'Nenhuma parte solta');
+        }
+      },
+      {
+        label: '🎨 Desenhar / Pintar Textura...',
+        onClick: () => openTextureStudioModal(this.engine, showToast)
+      },
+      { label: 'Shade Smooth', onClick: () => this.engine.performEditMeshOp('shade_smooth') },
+      { label: 'Shade Flat', onClick: () => this.engine.performEditMeshOp('shade_flat') },
+      { separator: true },
+      { sectionTitle: 'Grupos / Coleções' },
+      {
+        label: '📁 Colocar em Novo Grupo...',
+        shortcut: 'Ctrl+G',
+        onClick: () => this.promptCreateGroup(true)
+      },
+      ...moveGroupItems,
+      { separator: true },
+      {
+        label: '🗑 Remover / Deletar',
+        shortcut: 'Del',
+        onClick: () => {
+          if (specificObj && !this.engine.state.selectedIds.includes(specificObj.id)) {
+            this.engine.selectObject(specificObj.id, false);
+          }
+          this.engine.deleteSelected();
+          showToast('Removido');
+        }
+      }
+    ];
+  }
+
+  private promptCreateGroup(moveSelected = false): void {
+    openTextPromptModal({
+      title: moveSelected ? 'Colocar Selecionados em Novo Grupo' : 'Criar Novo Grupo / Coleção',
+      label: 'Nome do Grupo:',
+      initialValue: `Grupo_${this.engine.state.collections.length}`,
+      confirmLabel: 'Criar Grupo',
+      onConfirm: (name) => {
+        if (moveSelected && this.engine.state.selectedIds.length > 0) {
+          this.engine.groupSelectedIntoNewCollection(name);
+          showToast(`Objetos agrupados em "${name}"`);
+        } else {
+          this.engine.createCollection(name);
+          showToast(`Grupo "${name}" criado`);
+        }
+      }
+    });
+  }
+
+  private promptSliceActiveMesh(): void {
+    const active = this.engine.getActiveObject();
+    if (!active || active.kind !== 'MESH') {
+      showToast('Selecione um objeto Mesh 3D para recortar');
+      return;
+    }
+    openSliceMeshModal(active.name, (axis, mode, offset) => {
+      const parts = this.engine.sliceActiveMesh(axis, mode, offset);
+      showToast(
+        mode === 'split'
+          ? `"${active.name}" dividido em ${parts.length} partes!`
+          : `Malha "${active.name}" recortada!`
+      );
     });
   }
 
@@ -698,73 +989,189 @@ export class EditorApp {
           ${Icons.collectionRoot}
           <span class="obj-label">Scene Collection</span>
         </div>
-      </div>
-      <div class="outliner-row indent-1">
-        <div class="outliner-row-left">
-          ${Icons.chevronDown}
-          ${Icons.collectionBox}
-          <span class="obj-label">Collection</span>
-        </div>
         <div class="outliner-row-right">
-          ${Icons.checkboxChecked}
-          ${Icons.eyeOpen}
-          ${Icons.renderCamSmall}
+          <button type="button" class="outliner-mini-btn" id="outliner-paste-top" title="Colar (Paste)">📥</button>
         </div>
       </div>
     `;
 
-    for (const obj of st.objects) {
-      if (q && !obj.name.toLowerCase().includes(q)) continue;
-      const isSelected = st.selectedIds.includes(obj.id);
-      const row = document.createElement('div');
-      row.className = `outliner-row indent-2 ${isSelected ? 'selected' : ''}`;
+    this.outlinerTreeEl.querySelector('#outliner-paste-top')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const pasted = this.engine.pasteClipboard();
+      showToast(pasted.length ? `${pasted.length} colado(s)` : 'Área de transferência vazia');
+    });
 
-      const objIcon =
-        obj.kind === 'CAMERA'
-          ? Icons.outlinerCamOrange
-          : obj.kind === 'LIGHT'
-            ? Icons.outlinerLightOrange
-            : obj.kind === 'EMPTY'
-              ? Icons.outlinerEmptyOrange
-              : Icons.outlinerObjOrange;
+    for (const col of st.collections) {
+      const colObjs = st.objects.filter(
+        (o) =>
+          (o.collection || 'Collection') === col.name &&
+          (!q || o.name.toLowerCase().includes(q) || col.name.toLowerCase().includes(q))
+      );
 
-      const dataBadge =
-        obj.kind === 'CAMERA'
-          ? Icons.dataCamBadge
-          : obj.kind === 'LIGHT'
-            ? Icons.dataLightBadge
-            : obj.kind === 'MESH'
-              ? Icons.dataMeshBadge
-              : '';
-
-      row.innerHTML = `
+      const isActiveCol = st.activeCollection === col.name;
+      const colRow = document.createElement('div');
+      colRow.className = `outliner-row indent-1 ${isActiveCol ? 'active-col' : ''}`;
+      colRow.innerHTML = `
         <div class="outliner-row-left">
-          <span style="opacity:0.55;font-size:9px;">▸</span>
-          ${objIcon}
-          <span class="obj-label">${obj.name}</span>
-          ${dataBadge}
+          <button type="button" class="outliner-collapse-btn" title="Expandir / Recolher Grupo">
+            ${col.collapsed ? Icons.chevronRight : Icons.chevronDown}
+          </button>
+          ${Icons.collectionBox}
+          <span class="obj-label">${escapeHtml(col.name)}</span>
         </div>
         <div class="outliner-row-right">
-          <button type="button" class="outliner-eye-btn ${obj.visible ? '' : 'dimmed'}" title="Hide in Viewport">
-            ${obj.visible ? Icons.eyeOpen : Icons.eyeClosed}
+          <button type="button" class="outliner-mini-btn" data-col-more title="Opções do Grupo">⋯</button>
+          <button type="button" class="outliner-eye-btn ${col.visible ? '' : 'dimmed'}" data-col-eye title="Mostrar / Ocultar Grupo">
+            ${col.visible ? Icons.eyeOpen : Icons.eyeClosed}
           </button>
           ${Icons.renderCamSmall}
         </div>
       `;
 
-      row.addEventListener('click', (e) => {
-        if ((e.target as HTMLElement).closest('.outliner-eye-btn')) return;
-        this.engine.selectObject(obj.id, e.shiftKey);
-      });
-
-      row.querySelector('.outliner-eye-btn')?.addEventListener('click', (e) => {
+      colRow.querySelector('.outliner-collapse-btn')?.addEventListener('click', (e) => {
         e.stopPropagation();
-        obj.visible = !obj.visible;
-        this.engine.rebuildSceneObjects();
-        this.engine.notify();
+        this.engine.toggleCollectionCollapsed(col.name);
       });
 
-      this.outlinerTreeEl.appendChild(row);
+      colRow.querySelector('[data-col-eye]')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.engine.toggleCollectionVisible(col.name);
+      });
+
+      colRow.querySelector('[data-col-more]')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openDropdownMenu(e.currentTarget as HTMLElement, [
+          { sectionTitle: `Grupo: ${col.name}` },
+          {
+            label: 'Selecionar Todos do Grupo',
+            onClick: () => this.engine.selectCollectionObjects(col.name)
+          },
+          {
+            label: 'Mover Objetos Selecionados p/ Este Grupo',
+            onClick: () => {
+              this.engine.moveObjectsToCollection(st.selectedIds, col.name);
+              showToast(`Movido para "${col.name}"`);
+            }
+          },
+          {
+            label: '✎ Renomear Grupo...',
+            onClick: () =>
+              openTextPromptModal({
+                title: 'Renomear Grupo',
+                label: 'Novo nome:',
+                initialValue: col.name,
+                onConfirm: (next) => this.engine.renameCollection(col.name, next)
+              })
+          },
+          { separator: true },
+          {
+            label: 'Excluir Grupo (Manter Objetos)',
+            onClick: () => this.engine.deleteCollection(col.name, false)
+          },
+          {
+            label: '🗑 Excluir Grupo + Objetos Dentro',
+            onClick: () => this.engine.deleteCollection(col.name, true)
+          }
+        ]);
+      });
+
+      colRow.addEventListener('click', () => {
+        st.activeCollection = col.name;
+        this.renderOutliner();
+      });
+
+      colRow.addEventListener('dblclick', () => {
+        openTextPromptModal({
+          title: 'Renomear Grupo',
+          label: 'Novo nome do grupo:',
+          initialValue: col.name,
+          onConfirm: (next) => this.engine.renameCollection(col.name, next)
+        });
+      });
+
+      this.outlinerTreeEl.appendChild(colRow);
+
+      if (col.collapsed && !q) continue;
+
+      for (const obj of colObjs) {
+        const isSelected = st.selectedIds.includes(obj.id);
+        const row = document.createElement('div');
+        row.className = `outliner-row indent-2 ${isSelected ? 'selected' : ''}`;
+
+        const objIcon =
+          obj.kind === 'CAMERA'
+            ? Icons.outlinerCamOrange
+            : obj.kind === 'LIGHT'
+              ? Icons.outlinerLightOrange
+              : obj.kind === 'EMPTY'
+                ? Icons.outlinerEmptyOrange
+                : Icons.outlinerObjOrange;
+
+        const dataBadge =
+          obj.kind === 'CAMERA'
+            ? Icons.dataCamBadge
+            : obj.kind === 'LIGHT'
+              ? Icons.dataLightBadge
+              : obj.kind === 'MESH'
+                ? Icons.dataMeshBadge
+                : '';
+
+        row.innerHTML = `
+          <div class="outliner-row-left">
+            <span style="opacity:0.55;font-size:9px;">▸</span>
+            ${objIcon}
+            <span class="obj-label">${escapeHtml(obj.name)}</span>
+            ${dataBadge}
+          </div>
+          <div class="outliner-row-right">
+            <button type="button" class="outliner-mini-btn ${isSelected ? 'multi-on' : ''}" data-multi title="Selecionar junto (Multi-Seleção p/ Unir ou Agrupar)">⊕</button>
+            <button type="button" class="outliner-mini-btn" data-more title="Ações (Renomear, Grupo, Copiar, Unir, Recortar, Deletar)">⋯</button>
+            <button type="button" class="outliner-eye-btn ${obj.visible ? '' : 'dimmed'}" data-eye title="Mostrar / Ocultar">
+              ${obj.visible ? Icons.eyeOpen : Icons.eyeClosed}
+            </button>
+            ${Icons.renderCamSmall}
+          </div>
+        `;
+
+        row.addEventListener('click', (e) => {
+          if ((e.target as HTMLElement).closest('button')) return;
+          this.engine.selectObject(obj.id, e.shiftKey || e.ctrlKey || e.metaKey);
+        });
+
+        row.addEventListener('dblclick', () => {
+          openTextPromptModal({
+            title: 'Renomear Objeto',
+            label: 'Novo nome:',
+            initialValue: obj.name,
+            onConfirm: (val) => this.engine.renameObject(obj.id, val)
+          });
+        });
+
+        row.querySelector('[data-multi]')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.engine.selectObject(obj.id, true);
+        });
+
+        row.querySelector('[data-more]')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (!st.selectedIds.includes(obj.id)) {
+            this.engine.selectObject(obj.id, false);
+          }
+          openDropdownMenu(
+            e.currentTarget as HTMLElement,
+            this.buildObjectOperationsMenu(obj)
+          );
+        });
+
+        row.querySelector('[data-eye]')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          obj.visible = !obj.visible;
+          this.engine.rebuildSceneObjects();
+          this.engine.notify();
+        });
+
+        this.outlinerTreeEl.appendChild(row);
+      }
     }
   }
 
@@ -775,37 +1182,84 @@ export class EditorApp {
       this.renderOutliner();
     });
 
+    this.root.querySelector('#outliner-new-group-btn')?.addEventListener('click', () => {
+      this.promptCreateGroup(false);
+    });
+
+    this.root.querySelector('#outliner-filter-btn')?.addEventListener('click', (e) => {
+      openDropdownMenu(e.currentTarget as HTMLElement, [
+        { sectionTitle: 'Explorer & Hierarquia' },
+        { label: '📁 Criar Novo Grupo...', onClick: () => this.promptCreateGroup(false) },
+        {
+          label: '📁 Agrupar Selecionados...',
+          onClick: () => this.promptCreateGroup(true)
+        },
+        { separator: true },
+        ...this.buildObjectOperationsMenu()
+      ]);
+    });
+
     this.fileInputEl.addEventListener('change', async () => {
       const file = this.fileInputEl.files?.[0];
       if (!file) return;
       const ext = file.name.split('.').pop()?.toLowerCase() || '';
       try {
-        if (ext === 'obj') {
-          const text = await file.text();
-          const mesh = parseOBJToMesh(text);
-          if (mesh.vertices.length > 0) {
-            this.engine.addImportedMesh(file.name.replace(/\.obj$/i, ''), mesh);
-            showToast(`Imported ${file.name}`);
-          }
-        } else if (ext === 'stl') {
-          const buf = await file.arrayBuffer();
-          const mesh = parseSTLToMesh(buf);
-          if (mesh.vertices.length > 0) {
-            this.engine.addImportedMesh(file.name.replace(/\.stl$/i, ''), mesh);
-            showToast(`Imported ${file.name}`);
-          }
-        } else if (ext === 'modix' || ext === 'json') {
+        // 1. Native Modix Project JSON
+        if (ext === 'modix' || ext === 'json') {
           const text = await file.text();
           const parsed = JSON.parse(text);
           if (parsed && Array.isArray(parsed.objects)) {
-            this.engine.state = parsed;
+            this.engine.state = {
+              ...this.engine.createStartupState(),
+              ...parsed
+            };
             this.engine.rebuildSceneObjects();
             this.engine.notify();
-            showToast(`Opened ${file.name}`);
+            showToast(`Projeto "${file.name}" aberto!`);
+          }
+        }
+        // 2. Image Texture applied directly onto active 3D object
+        else if (['png', 'jpg', 'jpeg', 'webp'].includes(ext)) {
+          const active = this.engine.getActiveObject();
+          if (!active || active.kind !== 'MESH') {
+            showToast('Selecione um objeto Mesh primeiro para aplicar textura de imagem');
+          } else {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const r = new FileReader();
+              r.onload = () => resolve(String(r.result));
+              r.onerror = () => reject(new Error('Falha ao ler imagem'));
+              r.readAsDataURL(file);
+            });
+            this.engine.applyTextureDataUrl(active.id, dataUrl, file.name);
+            showToast(`Textura "${file.name}" aplicada em ${active.name}!`);
+          }
+        }
+        // 3. Universal 3D Model Import (.obj, .fbx, .glb, .gltf, .dae, .stl, .ply, .3mf, .amf, .svg, .off, .rbxmx)
+        else {
+          showToast(`Importando ${file.name}...`);
+          const importedList = await importAny3DFile(file);
+          if (importedList.length === 0) {
+            showToast(`Nenhuma malha 3D encontrada em ${file.name}`);
+          } else {
+            const addedIds: string[] = [];
+            for (const item of importedList) {
+              const created = this.engine.addImportedMesh(
+                item.name,
+                item.mesh,
+                item.material,
+                item.location
+              );
+              addedIds.push(created.id);
+            }
+            this.engine.state.selectedIds = addedIds;
+            this.engine.state.activeObjectId = addedIds[0];
+            this.engine.rebuildSceneObjects();
+            this.engine.notify();
+            showToast(`Importado: ${importedList.length} objeto(s) de ${file.name}`);
           }
         }
       } catch (err) {
-        showToast(`Import failed: ${(err as Error).message}`);
+        showToast(`Erro ao importar: ${(err as Error).message}`);
       }
       this.fileInputEl.value = '';
     });
@@ -817,17 +1271,62 @@ export class EditorApp {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
       const st = this.engine.state;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+      const mod = e.ctrlKey || e.metaKey;
+
+      if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) this.engine.redo();
         else this.engine.undo();
         return;
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      if (mod && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         this.engine.redo();
         return;
       }
+      if (mod && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        const n = this.engine.copySelected();
+        showToast(`${n} objeto(s) copiado(s)`);
+        return;
+      }
+      if (mod && e.key.toLowerCase() === 'x') {
+        e.preventDefault();
+        const n = this.engine.cutSelected();
+        showToast(`${n} objeto(s) recortado(s)`);
+        return;
+      }
+      if (mod && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        const p = this.engine.pasteClipboard();
+        showToast(p.length ? `${p.length} colado(s)` : 'Área de transferência vazia');
+        return;
+      }
+      if (mod && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        const joined = this.engine.joinSelected();
+        showToast(joined ? `Unido em "${joined.name}"` : 'Selecione 2+ objetos Mesh');
+        return;
+      }
+      if (mod && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        this.promptCreateGroup(true);
+        return;
+      }
+      if (e.key === 'F2') {
+        e.preventDefault();
+        const active = this.engine.getActiveObject();
+        if (active) {
+          openTextPromptModal({
+            title: 'Renomear Objeto',
+            label: 'Novo nome:',
+            initialValue: active.name,
+            onConfirm: (val) => this.engine.renameObject(active.id, val)
+          });
+        }
+        return;
+      }
+
       if (e.key === 'Tab') {
         e.preventDefault();
         st.mode = st.mode === 'EDIT' ? 'OBJECT' : 'EDIT';
@@ -870,7 +1369,18 @@ export class EditorApp {
         this.switchWorkspace('Sculpting');
       },
       onImportModel: () => this.fileInputEl.click(),
-      onExportOBJ: () => void this.handleExport('obj')
+      onExportHub: () => this.openExportHub(),
+      onOpenAIAgent: () => this.aiPanel.open('agente')
+    });
+  }
+
+  private openExportHub(): void {
+    const active = this.engine.getActiveObject();
+    const anyTex =
+      Boolean(active?.material.textureDataUrl) ||
+      this.engine.state.objects.some((o) => Boolean(o.material.textureDataUrl));
+    openExportHubModal(anyTex, (fmt, opts) => {
+      void this.handleExport(fmt, opts);
     });
   }
 
@@ -878,7 +1388,7 @@ export class EditorApp {
     this.engine.state = this.engine.createStartupState();
     this.engine.rebuildSceneObjects();
     this.engine.notify();
-    showToast('New Modix 3D Scene');
+    showToast('Nova cena Modix 3D iniciada');
   }
 
   private triggerRenderModal(): void {
@@ -888,20 +1398,86 @@ export class EditorApp {
     });
   }
 
-  private async handleExport(fmt: 'obj' | 'stl' | 'glb' | 'modix'): Promise<void> {
+  private async handleExport(
+    fmt: ExportFormatChoice,
+    objOptions?: OBJExportOptions
+  ): Promise<void> {
     try {
-      if (fmt === 'obj') {
-        const objText = exportSceneToOBJ(this.engine.state.objects);
-        const msg = await saveOrShareFile('modix-model.obj', objText, 'text/plain');
+      const objs = this.engine.state.objects;
+
+      if (fmt === 'obj_roblox') {
+        const objText = exportSceneToOBJ(objs, {
+          yUpForRoblox: true,
+          scale: objOptions?.scale ?? 1,
+          triangulate: true,
+          combineMeshes: objOptions?.combineMeshes ?? false,
+          mtlFileName: 'modix-roblox.mtl'
+        });
+        const msg = await saveOrShareFile('modix-roblox.obj', objText, 'text/plain');
+        showToast(`${msg} (Roblox Studio Y-Up + UVs prontos!)`);
+      } else if (fmt === 'obj_blender') {
+        const objText = exportSceneToOBJ(objs, {
+          yUpForRoblox: false,
+          scale: 1,
+          triangulate: false,
+          mtlFileName: 'modix-blender.mtl'
+        });
+        const msg = await saveOrShareFile('modix-blender.obj', objText, 'text/plain');
         showToast(msg);
-      } else if (fmt === 'stl') {
-        const stlText = exportSceneToSTL(this.engine.state.objects);
-        const msg = await saveOrShareFile('modix-model.stl', stlText, 'model/stl');
+      } else if (fmt === 'mtl') {
+        const texMap = new Map<string, string>();
+        for (const o of objs) {
+          if (o.material.textureDataUrl) {
+            texMap.set(o.id, o.material.textureName || `${o.name}_tex.png`);
+          }
+        }
+        const mtlText = exportSceneToMTL(objs, texMap);
+        const msg = await saveOrShareFile('modix-roblox.mtl', mtlText, 'text/plain');
+        showToast(msg);
+      } else if (fmt === 'tex_png') {
+        const active =
+          this.engine.getActiveObject()?.material.textureDataUrl
+            ? this.engine.getActiveObject()
+            : objs.find((o) => Boolean(o.material.textureDataUrl));
+        if (active?.material.textureDataUrl) {
+          const msg = await saveDataUrlPNG(
+            `${active.name}_RobloxTexture.png`,
+            active.material.textureDataUrl
+          );
+          showToast(msg);
+        } else {
+          showToast('Nenhuma textura encontrada na cena');
+        }
+      } else if (fmt === 'rbxmx') {
+        const xml = exportSceneToRBXMX(objs);
+        const msg = await saveOrShareFile('modix-model.rbxmx', xml, 'application/xml');
         showToast(msg);
       } else if (fmt === 'glb') {
         const group = this.engine.getExportableThreeGroup();
         const glb = await exportThreeGroupToGLB(group);
         const msg = await saveOrShareFile('modix-model.glb', glb, 'model/gltf-binary');
+        showToast(msg);
+      } else if (fmt === 'gltf') {
+        const group = this.engine.getExportableThreeGroup();
+        const gltf = await exportThreeGroupToGLTF(group);
+        const msg = await saveOrShareFile('modix-model.gltf', gltf, 'model/gltf+json');
+        showToast(msg);
+      } else if (fmt === 'stl') {
+        const stlText = exportSceneToSTL(objs);
+        const msg = await saveOrShareFile('modix-model.stl', stlText, 'model/stl');
+        showToast(msg);
+      } else if (fmt === 'ply') {
+        const plyText = exportSceneToPLY(objs);
+        const msg = await saveOrShareFile('modix-model.ply', plyText, 'text/plain');
+        showToast(msg);
+      } else if (fmt === 'dae') {
+        const daeXml = exportSceneToDAE(objs);
+        const msg = await saveOrShareFile('modix-model.dae', daeXml, 'model/vnd.collada+xml');
+        showToast(msg);
+      } else if (fmt === 'usdz') {
+        const group = this.engine.getExportableThreeGroup();
+        const usdz = await exportThreeGroupToUSDZ(group);
+        const msg = await saveOrShareFile('modix-model.usdz', usdz, 'model/vnd.usdz+zip');
         showToast(msg);
       } else if (fmt === 'modix') {
         const json = serializeProject(this.engine.state);
@@ -909,11 +1485,13 @@ export class EditorApp {
         showToast(msg);
       }
     } catch (err) {
-      showToast(`Export error: ${(err as Error).message}`);
+      showToast(`Erro na exportação: ${(err as Error).message}`);
     }
   }
 
   public syncAll(): void {
+    const lblScene = this.root.querySelector('#lbl-scene-name');
+    if (lblScene) lblScene.textContent = this.engine.state.sceneName;
     this.renderWorkspaceTabs();
     this.renderViewportHeader();
     this.renderLeftToolbar();
@@ -922,4 +1500,10 @@ export class EditorApp {
     this.propsPanel.sync();
     this.timelinePanel.sync();
   }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '"' ? '&quot;' : '&#39;'
+  );
 }

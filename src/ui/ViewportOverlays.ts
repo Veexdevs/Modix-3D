@@ -1,6 +1,7 @@
 import { Icons } from '../icons/blenderIcons';
 import type { ModixEngine } from '../engine/ModixEngine';
 import { openDropdownMenu, showToast } from './Modals';
+import { openTextureStudioModal } from './TexturePaintModal';
 
 export class ViewportOverlays {
   private engine: ModixEngine;
@@ -320,28 +321,53 @@ export class ViewportOverlays {
     // Sculpt / Paint floating controls
     if (st.mode === 'SCULPT' || st.mode === 'TEXTURE_PAINT') {
       this.sculptBarEl.style.display = 'flex';
-      this.sculptBarEl.innerHTML = `
-        <strong style="color:#fff;">${st.mode === 'SCULPT' ? 'Sculpt' : 'Paint'}</strong>
-        <label>Radius <input type="range" min="0.15" max="1.6" step="0.05" value="${st.sculpt.radius}" data-sc="radius" /></label>
-        <label>Strength <input type="range" min="0.05" max="1.0" step="0.05" value="${st.sculpt.strength}" data-sc="strength" /></label>
-        ${
-          st.mode === 'SCULPT'
-            ? `<label><input type="checkbox" ${st.sculpt.symmetryX ? 'checked' : ''} data-sc="symx" /> X-Sym</label>`
-            : `<label>Color <input type="color" value="${st.sculpt.paintColor}" data-sc="color" style="width:24px;height:18px;border:none;background:none;" /></label>`
-        }
-      `;
-      this.sculptBarEl.querySelector('[data-sc="radius"]')?.addEventListener('input', (e) => {
-        st.sculpt.radius = parseFloat((e.target as HTMLInputElement).value);
-      });
-      this.sculptBarEl.querySelector('[data-sc="strength"]')?.addEventListener('input', (e) => {
-        st.sculpt.strength = parseFloat((e.target as HTMLInputElement).value);
-      });
-      this.sculptBarEl.querySelector('[data-sc="symx"]')?.addEventListener('change', (e) => {
-        st.sculpt.symmetryX = (e.target as HTMLInputElement).checked;
-      });
-      this.sculptBarEl.querySelector('[data-sc="color"]')?.addEventListener('input', (e) => {
-        st.sculpt.paintColor = (e.target as HTMLInputElement).value;
-      });
+      if (st.mode === 'SCULPT') {
+        this.sculptBarEl.innerHTML = `
+          <strong style="color:#fff;">Sculpt</strong>
+          <label>Radius <input type="range" min="0.15" max="1.6" step="0.05" value="${st.sculpt.radius}" data-sc="radius" /></label>
+          <label>Strength <input type="range" min="0.05" max="1.0" step="0.05" value="${st.sculpt.strength}" data-sc="strength" /></label>
+          <label><input type="checkbox" ${st.sculpt.symmetryX ? 'checked' : ''} data-sc="symx" /> X-Sym</label>
+        `;
+        this.sculptBarEl.querySelector('[data-sc="radius"]')?.addEventListener('input', (e) => {
+          st.sculpt.radius = parseFloat((e.target as HTMLInputElement).value);
+        });
+        this.sculptBarEl.querySelector('[data-sc="strength"]')?.addEventListener('input', (e) => {
+          st.sculpt.strength = parseFloat((e.target as HTMLInputElement).value);
+        });
+        this.sculptBarEl.querySelector('[data-sc="symx"]')?.addEventListener('change', (e) => {
+          st.sculpt.symmetryX = (e.target as HTMLInputElement).checked;
+        });
+      } else {
+        const ptTarget = st.sculpt.paintTarget ?? 'texture';
+        const brushPx = st.sculpt.paintBrushPx ?? 18;
+        const opVal = st.sculpt.paintOpacity ?? 1;
+        this.sculptBarEl.innerHTML = `
+          <strong style="color:#93c5fd;">🖌 Pintura 3D</strong>
+          <label>Cor <input type="color" value="${st.sculpt.paintColor}" data-pt="color" style="width:24px;height:18px;border:none;background:none;" /></label>
+          <label>Pincel <input type="range" min="2" max="64" step="1" value="${brushPx}" data-pt="px" /></label>
+          <label>Opac. <input type="range" min="0.05" max="1" step="0.05" value="${opVal}" data-pt="op" /></label>
+          <select class="xf-select" data-pt="target" style="width:94px;height:20px;">
+            <option value="texture" ${ptTarget === 'texture' ? 'selected' : ''}>Textura UV</option>
+            <option value="vertex" ${ptTarget === 'vertex' ? 'selected' : ''}>Vértices</option>
+          </select>
+          <button type="button" class="modix-btn primary" data-pt="studio" style="height:20px;padding:0 7px;">🎨 Estúdio 2D</button>
+        `;
+        this.sculptBarEl.querySelector('[data-pt="color"]')?.addEventListener('input', (e) => {
+          st.sculpt.paintColor = (e.target as HTMLInputElement).value;
+        });
+        this.sculptBarEl.querySelector('[data-pt="px"]')?.addEventListener('input', (e) => {
+          st.sculpt.paintBrushPx = parseInt((e.target as HTMLInputElement).value, 10);
+        });
+        this.sculptBarEl.querySelector('[data-pt="op"]')?.addEventListener('input', (e) => {
+          st.sculpt.paintOpacity = parseFloat((e.target as HTMLInputElement).value);
+        });
+        this.sculptBarEl.querySelector('[data-pt="target"]')?.addEventListener('change', (e) => {
+          st.sculpt.paintTarget = (e.target as HTMLSelectElement).value as 'texture' | 'vertex';
+        });
+        this.sculptBarEl.querySelector('[data-pt="studio"]')?.addEventListener('click', () => {
+          openTextureStudioModal(this.engine, showToast);
+        });
+      }
     } else {
       this.sculptBarEl.style.display = 'none';
     }

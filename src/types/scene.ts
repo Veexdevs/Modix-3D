@@ -44,7 +44,14 @@ export type TransformOrientation = 'Global' | 'Local' | 'Normal' | 'View';
 
 export type PivotPoint = 'Median Point' | '3D Cursor' | 'Individual Origins' | 'Bounding Box';
 
-export type RotationMode = 'XYZ Euler' | 'XZY Euler' | 'YXZ Euler' | 'YZX Euler' | 'ZXY Euler' | 'ZYX Euler' | 'Quaternion';
+export type RotationMode =
+  | 'XYZ Euler'
+  | 'XZY Euler'
+  | 'YXZ Euler'
+  | 'YZX Euler'
+  | 'ZXY Euler'
+  | 'ZYX Euler'
+  | 'Quaternion';
 
 export type PropertiesTabId =
   | 'tool'
@@ -68,21 +75,32 @@ export type ObjectKind = 'MESH' | 'CAMERA' | 'LIGHT' | 'EMPTY';
 export type PrimitiveType =
   | 'cube'
   | 'plane'
+  | 'grid'
   | 'uv_sphere'
   | 'ico_sphere'
   | 'cylinder'
   | 'cone'
   | 'torus'
   | 'capsule'
-  | 'monkey';
+  | 'monkey'
+  | 'wedge'
+  | 'corner_wedge'
+  | 'pyramid'
+  | 'prism'
+  | 'hex_cylinder'
+  | 'pipe'
+  | 'arch'
+  | 'stairs'
+  | 'star'
+  | 'gear'
+  | 'ring'
+  | 'crystal'
+  | 'heart'
+  | 'torus_knot';
 
 export type LightKind = 'POINT' | 'SUN' | 'SPOT' | 'AREA';
 
-export interface Vec3Tuple {
-  x: number;
-  y: number;
-  z: number;
-}
+export type UVProjectionMode = 'box' | 'planar' | 'spherical' | 'cylindrical';
 
 export interface AxisLocks {
   x: boolean;
@@ -91,11 +109,11 @@ export interface AxisLocks {
 }
 
 export interface EditableMeshData {
-  /** Vertex positions in local Z-up Blender coordinates */
+  /** Vertex positions in local Z-up coordinates */
   vertices: [number, number, number][];
   /** Polygonal faces (triangles, quads, or n-gons) indexing into vertices */
   faces: number[][];
-  /** Optional per-vertex RGB colors (0..1) for Texture/Vertex Paint */
+  /** Optional per-vertex RGB colors (0..1) */
   vertexColors?: [number, number, number][];
   /** Smooth vs Flat shading */
   shadeSmooth?: boolean;
@@ -115,28 +133,33 @@ export interface ModifierItem {
   type: ModifierType;
   name: string;
   enabled: boolean;
-  // Parameters
-  levels?: number;         // SUBSURF
-  axisX?: boolean;         // MIRROR
+  levels?: number;
+  axisX?: boolean;
   axisY?: boolean;
   axisZ?: boolean;
-  clipping?: boolean;      // MIRROR
-  count?: number;          // ARRAY
-  offset?: [number, number, number]; // ARRAY
-  thickness?: number;      // SOLIDIFY / WIREFRAME
-  amount?: number;         // BEVEL
-  angleDeg?: number;       // TWIST
+  clipping?: boolean;
+  count?: number;
+  offset?: [number, number, number];
+  thickness?: number;
+  amount?: number;
+  angleDeg?: number;
 }
 
 export interface MaterialData {
   name: string;
-  baseColor: string;       // hex e.g. '#b8b8b8'
-  metallic: number;        // 0..1
-  roughness: number;       // 0..1
-  emissionColor: string;   // hex
-  emissionStrength: number;// 0..10
-  opacity: number;         // 0..1
+  baseColor: string;
+  metallic: number;
+  roughness: number;
+  emissionColor: string;
+  emissionStrength: number;
+  opacity: number;
   wireframe: boolean;
+  /** Optional 2D image/drawn/AI texture data URL (PNG/JPG) */
+  textureDataUrl?: string;
+  textureName?: string;
+  uvProjection?: UVProjectionMode;
+  repeatX?: number;
+  repeatY?: number;
 }
 
 export interface TransformKeyframe {
@@ -144,6 +167,14 @@ export interface TransformKeyframe {
   location?: [number, number, number];
   rotationDeg?: [number, number, number];
   scale?: [number, number, number];
+}
+
+export interface CollectionGroup {
+  id: string;
+  name: string;
+  visible: boolean;
+  collapsed: boolean;
+  color?: string;
 }
 
 export interface SceneObjectData {
@@ -154,7 +185,6 @@ export interface SceneObjectData {
   visible: boolean;
   selectable: boolean;
 
-  // Transform in Z-up meters & degrees (identical to Blender UI)
   location: [number, number, number];
   rotationDeg: [number, number, number];
   rotationMode: RotationMode;
@@ -168,7 +198,6 @@ export interface SceneObjectData {
   lockRotation: AxisLocks;
   lockScale: AxisLocks;
 
-  // Kind-specific payloads
   primitive?: PrimitiveType;
   mesh?: EditableMeshData;
   modifiers: ModifierItem[];
@@ -188,10 +217,10 @@ export interface SceneObjectData {
 export interface CompositorSettings {
   useNodes: boolean;
   monochromeBW: boolean;
-  contrast: number;    // 0.5 .. 2.0
-  exposure: number;    // 0.2 .. 2.5
-  vignette: number;    // 0 .. 1
-  bloom: number;       // 0 .. 1
+  contrast: number;
+  exposure: number;
+  vignette: number;
+  bloom: number;
 }
 
 export interface WorldSettings {
@@ -200,12 +229,18 @@ export interface WorldSettings {
 }
 
 export interface SculptSettings {
-  radius: number;      // in world units, e.g. 0.45
-  strength: number;    // 0.05 .. 1.0
+  radius: number;
+  strength: number;
   symmetryX: boolean;
   symmetryY: boolean;
   symmetryZ: boolean;
   paintColor: string;
+  paintSecondaryColor?: string;
+  paintBrushPx?: number;
+  paintOpacity?: number;
+  paintTarget?: 'texture' | 'vertex';
+  paintToTexture?: boolean;
+  brushPixelSize?: number;
 }
 
 export interface AnnotationStroke {
@@ -238,15 +273,16 @@ export interface ModixProjectState {
 
   cursor3D: [number, number, number];
 
+  collections: CollectionGroup[];
+  activeCollection: string;
+
   objects: SceneObjectData[];
   selectedIds: string[];
   activeObjectId: string | null;
 
-  // Edit mode sub-selections on active mesh
   selectedVertices: number[];
   selectedFaces: number[];
 
-  // Timeline
   currentFrame: number;
   startFrame: number;
   endFrame: number;
@@ -255,7 +291,6 @@ export interface ModixProjectState {
   playReverse: boolean;
   autoKeying: boolean;
 
-  // Inspector
   activePropertiesTab: PropertiesTabId;
   outlinerSearch: string;
   propertiesSearch: string;
