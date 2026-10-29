@@ -154,6 +154,319 @@ export function createLatheMesh(
   return { vertices, faces, shadeSmooth };
 }
 
+export interface LoftSectionSpec {
+  center: [number, number, number];
+  rx: number;
+  ry: number;
+  /** 1.0 = ellipse/circle, 0.2..0.5 = sleek rounded-rect/squircle, 1.8+ = diamond/pinched */
+  roundness?: number;
+  rotDeg?: number;
+}
+
+function computeRotationMinimizingFrames(
+  centers: THREE.Vector3[],
+  closed = false
+): { N: THREE.Vector3[]; B: THREE.Vector3[]; T: THREE.Vector3[] } {
+  const count = centers.length;
+  const T: THREE.Vector3[] = [];
+  for (let i = 0; i < count; i++) {
+    let dir: THREE.Vector3;
+    if (closed) {
+      dir = centers[(i + 1) % count].clone().sub(centers[(i - 1 + count) % count]);
+    } else if (i === 0) {
+      dir = centers[Math.min(1, count - 1)].clone().sub(centers[0]);
+    } else if (i === count - 1) {
+      dir = centers[count - 1].clone().sub(centers[count - 2]);
+    } else {
+      dir = centers[i + 1].clone().sub(centers[i - 1]);
+    }
+    if (dir.lengthSq() < 1e-8) dir.set(0, 0, 1);
+    T.push(dir.normalize());
+  }
+
+  // Build right-handed orthonormal basis (N, B, T) where N x B = +T
+  const N: THREE.Vector3[] = [];
+  const B: THREE.Vector3[] = [];
+  const t0 = T[0];
+  const ref = Math.abs(t0.x) < 0.85 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+  // Let B0 = T0 x ref, N0 = B0 x T0 -> then N0 x B0 = (B0 x T0) x B0 = +T0!
+  const b0 = new THREE.Vector3().crossVectors(t0, ref).normalize();
+  const n0 = new THREE.Vector3().crossVectors(b0, t0).normalize();
+  N.push(n0);
+  B.push(b0);
+
+  for (let i = 1; i < count; i++) {
+    const prevT = T[i - 1];
+    const currT = T[i];
+    const ni = N[i - 1].clone();
+    const axis = new THREE.Vector3().crossVectors(prevT, currT);
+    const sinA = axis.length();
+    if (sinA > 1e-6) {
+      axis.normalize();
+      const cosA = Math.max(-1, Math.min(1, prevT.dot(currT)));
+      ni.applyAxisAngle(axis, Math.atan2(sinA, cosA));
+    }
+    // Re-orthonormalize so N x B = +currT
+    ni.sub(currT.clone().multiplyScalar(ni.dot(currT))).normalize();
+    const bi = new THREE.Vector3().crossVectors(currT, ni).normalize();
+    N.push(ni);
+    B.push(bi);
+  }
+
+  return { N, B, T };
+}
+
+/**
+ * Smooth 3D Spline Sweep / Generalized Cylinder with variable radius profile along a 3D curve.
+ * Ideal for horns, tails, limbs, handles, cables, curved blades, handlebars, pipes, arches, hair locks.
+ */
+export function createTubeSweepMesh(
+  path3D: [number, number, number][],
+  radii: number | number[] = 0.2,
+  options?: {
+    radialSegments?: number;
+    tubularSamples?: number;
+    closed?: boolean;
+    capEnds?: boolean;
+    aspectY?: number;
+    shadeSmooth?: boolean;
+  }
+): EditableMeshData {
+  if (!Array.isArray(path3D) || path3D.length < 2) {
+    return createPrimitiveMesh('cylinder');
+  }
+  const closed = Boolean(options?.closed && path3D.length >= 3);
+  const radialSegs = Math.max(6, Math.min(36, Math.round(options?.radialSegments ?? 14)));
+  const defaultSamples = Math.max(path3D.length * 4, 16);
+  const samples = Math.max(4, Math.min(72, Math.round(options?.tubularSamples ?? defaultSamples)));
+  const capEnds = options?.capEnds !== false && !closed;
+  const aspectY = Math.max(0.15, Math.min(6, Number(options?.aspectY) || 1));
+  const shadeSmooth = options?.shadeSmooth !== false;
+
+  const ctrlPts = path3D.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+  const curve = new THREE.CatmullRomCurve3(ctrlPts, closed, 'centripetal', 0.5);
+
+  const centers: THREE.Vector3[] = [];
+  const ringCount = closed ? samples : samples + 1;
+  for (let i = 0; i < ringCount; i++) {
+    const u = closed ? i / samples : i / samples;
+    centers.push(curve.getPoint(u));
+  }
+
+  const radList = Array.isArray(radii) && radii.length > 0 ? radii : [Number(radii) || 0.2];
+  const sampleRadiusAt = (u: number): number => {
+    if (radList.length === 1) return Math.max(0.002, Number(radList[0]) || 0.15);
+    const pos = Math.max(0, Math.min(1, u)) * (radList.length - 1);
+    const idx = Math.floor(pos);
+    const frac = pos - idx;
+    const a = Number(radList[idx]) || 0.1;
+    const b = Number(radList[Math.min(radList.length - 1, idx + 1)]) ?? a;
+    return Math.max(0.002, a + (b - a) * frac);
+  };
+
+  const { N, B } = computeRotationMinimizingFrames(centers, closed);
+  const vertices: [number, number, number][] = [];
+  const faces: number[][] = [];
+
+  for (let i = 0; i < ringCount; i++) {
+    const u = closed ? i / samples : i / samples;
+    const r = sampleRadiusAt(u);
+    const rx = r;
+    const ry = r * aspectY;
+    const c = centers[i];
+    const ni = N[i];
+    const bi = B[i];
+    for (let j = 0; j < radialSegs; j++) {
+      const th = (2 * Math.PI * j) / radialSegs;
+      const ca = Math.cos(th) * rx;
+      const sa = Math.sin(th) * ry;
+      vertices.push([
+        c.x + ca * ni.x + sa * bi.x,
+        c.y + ca * ni.y + sa * bi.y,
+        c.z + ca * ni.z + sa * bi.z
+      ]);
+    }
+  }
+
+  const segLoops = closed ? ringCount : ringCount - 1;
+  for (let i = 0; i < segLoops; i++) {
+    const rA = i * radialSegs;
+    const rB = ((i + 1) % ringCount) * radialSegs;
+    for (let j = 0; j < radialSegs; j++) {
+      const nj = (j + 1) % radialSegs;
+      faces.push([rA + j, rA + nj, rB + nj, rB + j]);
+    }
+  }
+
+  if (capEnds) {
+    const r0 = sampleRadiusAt(0);
+    if (r0 > 0.004) {
+      const startCenterIdx = vertices.length;
+      vertices.push([centers[0].x, centers[0].y, centers[0].z]);
+      for (let j = 0; j < radialSegs; j++) {
+        const nj = (j + 1) % radialSegs;
+        faces.push([startCenterIdx, nj, j]);
+      }
+    }
+    const rEnd = sampleRadiusAt(1);
+    if (rEnd > 0.004) {
+      const endCenterIdx = vertices.length;
+      const lastC = centers[ringCount - 1];
+      const lastRow = (ringCount - 1) * radialSegs;
+      vertices.push([lastC.x, lastC.y, lastC.z]);
+      for (let j = 0; j < radialSegs; j++) {
+        const nj = (j + 1) % radialSegs;
+        faces.push([endCenterIdx, lastRow + j, lastRow + nj]);
+      }
+    }
+  }
+
+  return { vertices, faces, shadeSmooth };
+}
+
+/**
+ * Multi-Cross-Section 3D Lofting Hull (CAD / Sub-D style).
+ * Connects 2+ cross-sections (ellipses, rounded-rect squircles, or diamonds) smoothly in 3D space.
+ * Ideal for car bodies, helmets, torsos, sneakers, weapons, aircraft fuselages, ergonomic hulls, heads.
+ */
+export function createLoftedSectionsMesh(
+  sections: LoftSectionSpec[],
+  options?: {
+    radialSegments?: number;
+    subdivideLevels?: number;
+    shadeSmooth?: boolean;
+  }
+): EditableMeshData {
+  if (!Array.isArray(sections) || sections.length < 2) {
+    return createPrimitiveMesh('cube');
+  }
+  const radialSegs = Math.max(8, Math.min(40, Math.round(options?.radialSegments ?? 16)));
+  const centers = sections.map((s) => new THREE.Vector3(s.center[0], s.center[1], s.center[2]));
+  const { N, B, T } = computeRotationMinimizingFrames(centers, false);
+
+  const vertices: [number, number, number][] = [];
+  const faces: number[][] = [];
+
+  for (let i = 0; i < sections.length; i++) {
+    const sec = sections[i];
+    const rx = Math.max(0.003, Number(sec.rx) || 0.5);
+    const ry = Math.max(0.003, Number(sec.ry) || 0.5);
+    // Superellipse exponent: roundness=1 -> 2 (ellipse), roundness=0.25 -> 0.5 (squircle/rounded-box), roundness=1.8 -> diamond
+    const exp = Math.max(0.22, Math.min(2.6, Number(sec.roundness) || 1.0));
+    const rotRad = ((Number(sec.rotDeg) || 0) * Math.PI) / 180;
+    const cRot = Math.cos(rotRad);
+    const sRot = Math.sin(rotRad);
+
+    const c = centers[i];
+    const ni = N[i];
+    const bi = B[i];
+
+    for (let j = 0; j < radialSegs; j++) {
+      const th = (2 * Math.PI * j) / radialSegs;
+      const ct = Math.cos(th);
+      const st = Math.sin(th);
+      const lx = Math.sign(ct) * Math.pow(Math.abs(ct), exp) * rx;
+      const ly = Math.sign(st) * Math.pow(Math.abs(st), exp) * ry;
+      const ux = lx * cRot - ly * sRot;
+      const uy = lx * sRot + ly * cRot;
+
+      vertices.push([
+        c.x + ux * ni.x + uy * bi.x,
+        c.y + ux * ni.y + uy * bi.y,
+        c.z + ux * ni.z + uy * bi.z
+      ]);
+    }
+  }
+
+  for (let i = 0; i < sections.length - 1; i++) {
+    const rA = i * radialSegs;
+    const rB = (i + 1) * radialSegs;
+    for (let j = 0; j < radialSegs; j++) {
+      const nj = (j + 1) % radialSegs;
+      faces.push([rA + j, rA + nj, rB + nj, rB + j]);
+    }
+  }
+
+  // Outward start cap (-T[0]) and end cap (+T[last])
+  const startCenterIdx = vertices.length;
+  vertices.push([
+    centers[0].x - T[0].x * 0.001,
+    centers[0].y - T[0].y * 0.001,
+    centers[0].z - T[0].z * 0.001
+  ]);
+  for (let j = 0; j < radialSegs; j++) {
+    const nj = (j + 1) % radialSegs;
+    faces.push([startCenterIdx, nj, j]);
+  }
+
+  const lastIdx = sections.length - 1;
+  const lastRow = lastIdx * radialSegs;
+  const endCenterIdx = vertices.length;
+  vertices.push([
+    centers[lastIdx].x + T[lastIdx].x * 0.001,
+    centers[lastIdx].y + T[lastIdx].y * 0.001,
+    centers[lastIdx].z + T[lastIdx].z * 0.001
+  ]);
+  for (let j = 0; j < radialSegs; j++) {
+    const nj = (j + 1) % radialSegs;
+    faces.push([endCenterIdx, lastRow + j, lastRow + nj]);
+  }
+
+  let mesh: EditableMeshData = {
+    vertices,
+    faces,
+    shadeSmooth: options?.shadeSmooth !== false
+  };
+  const subdiv = Math.max(0, Math.min(2, Math.round(options?.subdivideLevels ?? 0)));
+  if (subdiv > 0) {
+    mesh = catmullClarkSubdivide(mesh, subdiv);
+    mesh.shadeSmooth = options?.shadeSmooth !== false;
+  }
+  return mesh;
+}
+
+/** Bends a mesh along Z (height) curving into X by angleDeg */
+export function bendMeshZ(mesh: EditableMeshData, angleDeg = 35): EditableMeshData {
+  const out = cloneMeshData(mesh);
+  const rad = (angleDeg * Math.PI) / 180;
+  if (Math.abs(rad) < 1e-4) return out;
+  const bounds = computeMeshBounds(out);
+  const minZ = bounds.min[2];
+  const spanZ = bounds.span[2];
+  const radius = spanZ / rad;
+
+  for (const v of out.vertices) {
+    const t = (v[2] - minZ) / spanZ;
+    const theta = t * rad;
+    const rLocal = radius - v[0];
+    v[0] = radius - rLocal * Math.cos(theta);
+    v[2] = minZ + rLocal * Math.sin(theta);
+  }
+  return out;
+}
+
+/** Twists a mesh around Z axis by angleDeg from bottom to top */
+export function twistMeshZ(mesh: EditableMeshData, angleDeg = 45): EditableMeshData {
+  const out = cloneMeshData(mesh);
+  const rad = (angleDeg * Math.PI) / 180;
+  if (Math.abs(rad) < 1e-4) return out;
+  const bounds = computeMeshBounds(out);
+  const minZ = bounds.min[2];
+  const spanZ = bounds.span[2];
+
+  for (const v of out.vertices) {
+    const t = (v[2] - minZ) / spanZ - 0.5;
+    const a = t * rad;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    const nx = v[0] * c - v[1] * s;
+    const ny = v[0] * s + v[1] * c;
+    v[0] = nx;
+    v[1] = ny;
+  }
+  return out;
+}
+
 /** Converts any Three.js BufferGeometry (from FBX/GLB/DAE/PLY/3MF/SVG) into EditableMeshData */
 export function threeGeometryToEditableMesh(
   geo: THREE.BufferGeometry,

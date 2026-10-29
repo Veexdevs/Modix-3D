@@ -49,11 +49,11 @@ body,
   overscroll-behavior: none;
 }
 
-input[type='text'],
-input[type='number'],
+input,
 textarea {
   user-select: text;
   -webkit-user-select: text;
+  font-family: inherit;
 }
 
 button {
@@ -2007,200 +2007,384 @@ button {
   }
 }
 
-/* ==================== 14. ACCOUNT AUTH & STARTUP PROJECTS SCREEN ==================== */
+/* ==================== 14. STUDIO ACCOUNT AUTH, STARTUP PROJECTS & AI MULTI-REF ==================== */
 .modix-projects-back-btn {
-  height: 20px;
-  padding: 0 7px;
-  margin-right: 3px;
-  background: #232326;
-  border: 1px solid #3c3c42;
-  border-radius: 4px;
+  height: 22px;
+  padding: 0 8px;
+  margin-right: 4px;
+  background: #1c1c20;
+  border: 1px solid #383840;
+  border-radius: 5px;
   color: #f4f4f5;
-  font-size: 10.6px;
+  font-size: 10.8px;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   flex-shrink: 0;
+  transition: background 0.14s, border-color 0.14s;
 }
 .modix-projects-back-btn:hover {
-  background: #303036;
-  border-color: #56565e;
+  background: #2b2b32;
+  border-color: #6b6b76;
 }
 
-/* Mandatory Account Auth Screen (Preto e Branco) */
+.modix-btn-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(128, 128, 136, 0.35);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: modix-spin 0.7s linear infinite;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* 14A. Mandatory Account Auth Screen (Landscape Black & White Studio) */
 .modix-auth-screen {
   position: fixed;
   inset: 0;
-  background: radial-gradient(circle at 50% 0%, #1d1d20 0%, #09090b 65%, #050506 100%);
+  background: #050507;
   color: #fafafa;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 18px;
+  padding: max(12px, env(safe-area-inset-top, 12px)) max(18px, env(safe-area-inset-right, 18px))
+    max(12px, env(safe-area-inset-bottom, 12px)) max(18px, env(safe-area-inset-left, 18px));
   overflow-y: auto;
 }
 
-.modix-auth-card {
-  width: min(440px, 94vw);
-  background: #111113;
-  border: 1px solid #2c2c31;
-  border-radius: 12px;
-  padding: 22px 24px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.82);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+.modix-auth-bg-grid {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.085) 0%, transparent 52%),
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 100% 100%, 34px 34px, 34px 34px;
+  mask-image: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.95) 20%, rgba(0, 0, 0, 0.18) 85%);
+  -webkit-mask-image: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.95) 20%, rgba(0, 0, 0, 0.18) 85%);
 }
 
-.modix-auth-brand {
+.modix-auth-panel {
+  position: relative;
+  z-index: 1;
+  width: min(820px, 96vw);
+  background: #0c0c0f;
+  border: 1px solid #26262c;
+  border-radius: 16px;
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.9),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  display: grid;
+  grid-template-columns: 1.02fr 1.08fr;
+  overflow: hidden;
+}
+
+.modix-auth-showcase {
+  padding: 26px 26px;
+  background: linear-gradient(155deg, #131317 0%, #09090b 65%, #060608 100%);
+  border-right: 1px solid #1f1f25;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.modix-auth-brand-top {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 13px;
+}
+
+.modix-auth-logo-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: #050507;
+  border: 1px solid #2e2e36;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.65);
 }
 .modix-auth-logo {
-  width: 38px;
-  height: 38px;
+  width: 30px;
+  height: 30px;
   object-fit: contain;
+  display: block;
+}
+
+.modix-auth-wordmark-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .modix-auth-title {
   margin: 0;
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.025em;
   color: #ffffff;
 }
-.modix-auth-subtitle {
-  margin: 2px 0 0;
+.modix-auth-studio-tag {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #09090b;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.modix-auth-tagline {
+  margin: 4px 0 0;
   font-size: 11.8px;
+  line-height: 1.35;
   color: #a1a1aa;
+}
+
+.modix-auth-feature-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.modix-auth-feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.028);
+  border: 1px solid #202027;
+}
+.modix-auth-feat-ico {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: #19191f;
+  border: 1px solid #2e2e38;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.modix-auth-feat-title {
+  font-size: 11.8px;
+  font-weight: 700;
+  color: #f4f4f5;
+}
+.modix-auth-feat-sub {
+  margin-top: 2px;
+  font-size: 10.5px;
+  line-height: 1.3;
+  color: #8e8e98;
+}
+
+.modix-auth-card {
+  padding: 24px 26px;
+  background: #0e0e11;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 13px;
 }
 
 .modix-auth-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  background: #0a0a0c;
-  border: 1px solid #27272a;
+  gap: 5px;
+  background: #070709;
+  border: 1px solid #24242b;
   padding: 4px;
-  border-radius: 8px;
+  border-radius: 10px;
 }
 .modix-auth-tab {
-  height: 32px;
-  border-radius: 6px;
+  height: 34px;
+  border-radius: 7px;
   font-size: 12px;
-  font-weight: 600;
-  color: #a1a1aa;
+  font-weight: 700;
+  color: #9ca3af;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition: background 0.14s, color 0.14s;
+  transition: background 0.15s, color 0.15s;
+}
+.modix-auth-tab:hover:not(.active) {
+  color: #f4f4f5;
+  background: rgba(255, 255, 255, 0.04);
 }
 .modix-auth-tab.active {
   background: #ffffff;
   color: #09090b;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.45);
 }
 
 .modix-auth-form {
   display: flex;
   flex-direction: column;
+  gap: 11px;
+}
+
+.modix-auth-profile-row {
+  display: flex;
+  align-items: flex-end;
   gap: 10px;
 }
+.modix-auth-avatar-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: #16161b;
+  border: 1px dashed #4b4b57;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #d4d4d8;
+  transition: border-color 0.15s, background 0.15s;
+}
+.modix-auth-avatar-btn:hover {
+  border-color: #ffffff;
+  background: #202028;
+}
+.modix-auth-avatar-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.modix-auth-avatar-empty {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .modix-auth-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
-.modix-auth-field > span {
-  font-size: 11.2px;
+.modix-auth-field-lbl {
+  font-size: 11px;
   font-weight: 600;
+  letter-spacing: 0.01em;
   color: #d4d4d8;
 }
 .modix-auth-input-wrap {
-  height: 36px;
-  background: #09090b;
-  border: 1px solid #2e2e34;
-  border-radius: 7px;
-  padding: 0 10px;
+  height: 38px;
+  background: #070709;
+  border: 1px solid #2a2a33;
+  border-radius: 8px;
+  padding: 0 11px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: #a1a1aa;
+  gap: 9px;
+  color: #8e8e99;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .modix-auth-input-wrap:focus-within {
   border-color: #ffffff;
   color: #ffffff;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
 }
 .modix-auth-input-wrap input {
   flex: 1;
+  min-width: 0;
   height: 100%;
   background: transparent;
   border: none;
   outline: none;
   color: #fafafa;
-  font-size: 12.5px;
+  font-size: 12.6px;
 }
-
-.modix-auth-error {
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: rgba(127, 29, 29, 0.35);
-  border: 1px solid #991b1b;
-  color: #fca5a5;
-  font-size: 11.5px;
+.modix-auth-input-wrap input::placeholder {
+  color: #5b5b66;
 }
-.modix-auth-info {
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid #3f3f46;
-  color: #e4e4e7;
-  font-size: 11.5px;
-}
-
-.modix-auth-submit {
-  height: 38px;
-  margin-top: 2px;
-  border-radius: 7px;
-  background: #ffffff;
-  color: #09090b;
-  font-size: 12.8px;
-  font-weight: 700;
+.modix-auth-eye-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  color: #8e8e99;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  transition: opacity 0.14s, transform 0.1s;
+  flex-shrink: 0;
 }
-.modix-auth-submit:hover {
-  opacity: 0.92;
+.modix-auth-eye-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.modix-auth-error {
+  padding: 8px 11px;
+  border-radius: 8px;
+  background: rgba(127, 29, 29, 0.32);
+  border: 1px solid #991b1b;
+  color: #fecaca;
+  font-size: 11.4px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.modix-auth-submit {
+  height: 40px;
+  margin-top: 3px;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #09090b;
+  font-size: 12.8px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 8px 24px rgba(255, 255, 255, 0.12);
+  transition: background 0.14s, transform 0.1s;
+}
+.modix-auth-submit:hover:not(:disabled) {
+  background: #e4e4e7;
+}
+.modix-auth-submit:active:not(:disabled) {
+  transform: scale(0.99);
 }
 .modix-auth-submit:disabled {
-  opacity: 0.55;
+  opacity: 0.6;
   cursor: wait;
 }
 
-/* Mandatory Startup Projects Screen (ONLY Projects & Create Project + Top-Right Account Widget) */
+/* 14B. Mandatory Startup Projects Screen (ONLY Projects & Create Project + Top-Right Profile) */
 .modix-projects-screen {
   position: fixed;
   inset: 0;
-  background: #09090b;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(255, 255, 255, 0.06) 0%, transparent 50%),
+    #070709;
   color: #fafafa;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 .modix-projects-topbar {
-  height: 54px;
-  padding: 0 20px;
-  background: #0f0f12;
-  border-bottom: 1px solid #242429;
+  height: 56px;
+  padding: 0 22px;
+  background: rgba(12, 12, 15, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid #202026;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   flex-shrink: 0;
 }
 
@@ -2213,56 +2397,79 @@ button {
   width: 24px;
   height: 24px;
   object-fit: contain;
+  display: block;
 }
 .modix-projects-brand-name {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-size: 15.5px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   color: #ffffff;
 }
 .modix-projects-brand-sep {
   width: 1px;
   height: 16px;
-  background: #2e2e34;
+  background: #2c2c34;
 }
 .modix-projects-brand-sub {
-  font-size: 12.5px;
-  font-weight: 500;
-  color: #a1a1aa;
+  font-size: 13px;
+  font-weight: 600;
+  color: #b4b4be;
+}
+.modix-projects-count-pill {
+  height: 19px;
+  min-width: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #1b1b21;
+  border: 1px solid #2f2f38;
+  color: #e4e4e7;
+  font-size: 10.5px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-/* Top-Right Account Photo + Name Button */
+.modix-projects-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Top-Right Account Photo + Name Widget */
 .modix-account-chip {
-  height: 38px;
-  padding: 3px 10px 3px 5px;
-  background: #16161a;
-  border: 1px solid #2e2e36;
+  height: 40px;
+  padding: 4px 12px 4px 5px;
+  background: #131317;
+  border: 1px solid #2b2b34;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
   gap: 9px;
   color: #fafafa;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
 .modix-account-chip:hover {
-  background: #202026;
-  border-color: #52525b;
+  background: #1c1c22;
+  border-color: #63636e;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
 }
 .modix-account-avatar {
   width: 30px;
   height: 30px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  background: #27272a;
+  border: 1.5px solid rgba(255, 255, 255, 0.5);
+  background: #222228;
   flex-shrink: 0;
+  display: block;
 }
 .modix-account-meta {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  line-height: 1.15;
-  max-width: 190px;
+  line-height: 1.18;
+  max-width: 195px;
 }
 .modix-account-name {
   font-size: 12px;
@@ -2275,17 +2482,22 @@ button {
 }
 .modix-account-email {
   font-size: 10px;
-  color: #a1a1aa;
+  color: #9ca3af;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
 }
+.modix-account-caret {
+  color: #9ca3af;
+  display: inline-flex;
+  align-items: center;
+}
 
 .modix-projects-main {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 22px 24px 32px;
+  padding: 22px 24px 36px;
   max-width: 1280px;
   width: 100%;
   margin: 0 auto;
@@ -2303,98 +2515,114 @@ button {
 }
 .modix-projects-heading {
   margin: 0;
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   color: #ffffff;
 }
 .modix-projects-count {
-  margin: 3px 0 0;
+  margin: 4px 0 0;
   font-size: 12px;
-  color: #a1a1aa;
+  color: #9ca3af;
 }
 
 .modix-create-project-btn {
   height: 38px;
   padding: 0 16px;
-  border-radius: 8px;
+  border-radius: 9px;
   background: #ffffff;
   color: #09090b;
   font-size: 12.5px;
-  font-weight: 700;
+  font-weight: 800;
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  box-shadow: 0 6px 20px rgba(255, 255, 255, 0.1);
+  box-shadow: 0 6px 20px rgba(255, 255, 255, 0.12);
+  transition: background 0.14s, transform 0.1s;
 }
 .modix-create-project-btn:hover {
   background: #e4e4e7;
 }
+.modix-create-project-btn:active {
+  transform: scale(0.98);
+}
 
 .modix-projects-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(225px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
+  gap: 15px;
 }
 
 .modix-project-card {
-  background: #121215;
-  border: 1px solid #27272c;
-  border-radius: 10px;
+  background: #101014;
+  border: 1px solid #24242c;
+  border-radius: 12px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   cursor: pointer;
-  transition: transform 0.14s, border-color 0.14s, box-shadow 0.14s;
-  min-height: 188px;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+  min-height: 194px;
+  text-align: left;
 }
 .modix-project-card:hover {
   border-color: #71717a;
   transform: translateY(-2px);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.68);
 }
 
 .modix-project-create-card {
-  border-style: dashed;
-  border-color: #3f3f46;
-  background: rgba(255, 255, 255, 0.02);
+  border: 1.5px dashed #383844;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 18px;
-  gap: 8px;
+  padding: 20px;
+  gap: 9px;
 }
 .modix-project-create-card:hover {
   border-color: #ffffff;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.055);
 }
 .modix-project-create-plus {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: #ffffff;
   color: #09090b;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 6px 18px rgba(255, 255, 255, 0.16);
 }
 .modix-project-create-plus svg {
   width: 20px;
   height: 20px;
 }
 .modix-project-create-label {
-  font-size: 13.5px;
-  font-weight: 700;
+  font-size: 13.8px;
+  font-weight: 800;
   color: #ffffff;
 }
 .modix-project-create-hint {
   font-size: 11px;
+  color: #9ca3af;
+}
+
+.modix-project-skeleton {
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   color: #a1a1aa;
+  font-size: 12px;
+  cursor: default;
 }
 
 .modix-project-thumb {
-  height: 118px;
-  background: linear-gradient(145deg, #19191d 0%, #0d0d10 100%);
-  border-bottom: 1px solid #222227;
+  position: relative;
+  height: 126px;
+  background: radial-gradient(circle at 50% 45%, #1d1d24 0%, #0b0b0e 100%);
+  border-bottom: 1px solid #1f1f26;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2407,18 +2635,43 @@ button {
   display: block;
 }
 .modix-project-thumb-placeholder {
-  color: #52525b;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  color: #71717a;
   display: flex;
   align-items: center;
   justify-content: center;
 }
+.modix-project-thumb-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
 .modix-project-thumb-placeholder svg {
+  position: relative;
+  z-index: 1;
   width: 34px;
   height: 34px;
 }
+.modix-project-obj-badge {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(9, 9, 11, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e4e4e7;
+  font-size: 9.8px;
+  font-weight: 600;
+}
 
 .modix-project-body {
-  padding: 10px 12px;
+  padding: 11px 13px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2429,10 +2682,10 @@ button {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
 }
 .modix-project-title {
-  font-size: 12.8px;
+  font-size: 13px;
   font-weight: 700;
   color: #fafafa;
   white-space: nowrap;
@@ -2441,7 +2694,7 @@ button {
 }
 .modix-project-sub {
   font-size: 10.6px;
-  color: #a1a1aa;
+  color: #8e8e98;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2454,18 +2707,19 @@ button {
   flex-shrink: 0;
 }
 .modix-project-act-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: 5px;
-  background: #1c1c21;
-  border: 1px solid #2e2e36;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: #18181e;
+  border: 1px solid #2b2b35;
   color: #d4d4d8;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: background 0.14s, color 0.14s;
 }
 .modix-project-act-btn:hover {
-  background: #2c2c34;
+  background: #2a2a33;
   color: #ffffff;
 }
 .modix-project-act-btn.danger:hover {
@@ -2474,24 +2728,259 @@ button {
   color: #ffffff;
 }
 
-@media (max-height: 500px) and (orientation: landscape) {
+/* 14C. Multi-Image Reference Strip & Vision Controls inside AI Panel */
+.modix-ai-drawer.drag-over {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 18px 48px rgba(0, 0, 0, 0.9);
+}
+
+.modix-ai-attach-btn {
+  position: relative;
+  width: 32px;
+  height: 30px;
+  border-radius: 5px;
+  background: #18181d;
+  border: 1px solid #32323c;
+  color: #e4e4e7;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.14s, border-color 0.14s;
+}
+.modix-ai-attach-btn:hover:not(:disabled) {
+  background: #272730;
+  border-color: #ffffff;
+  color: #ffffff;
+}
+.modix-ai-attach-btn.has-refs {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #09090b;
+}
+.modix-ai-attach-btn .attach-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modix-ai-ref-strip {
+  padding: 6px 8px;
+  background: #111115;
+  border-top: 1px solid #24242c;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.modix-ai-ref-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 700;
+  color: #e4e4e7;
+}
+.modix-ai-ref-clear {
+  font-size: 10px;
+  color: #a1a1aa;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.modix-ai-ref-clear:hover {
+  color: #ffffff;
+  background: #27272f;
+}
+.modix-ai-ref-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.modix-ai-ref-item {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  border: 1px solid #3f3f4a;
+  overflow: hidden;
+  background: #1b1b22;
+  flex-shrink: 0;
+}
+.modix-ai-ref-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.modix-ai-ref-badge {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.78);
+  color: #ffffff;
+  font-size: 8.5px;
+  font-weight: 700;
+}
+.modix-ai-ref-rm {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(9, 9, 11, 0.85);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.modix-ai-ref-rm svg {
+  width: 9px;
+  height: 9px;
+}
+.modix-ai-ref-rm:hover {
+  background: #dc2626;
+}
+.modix-ai-ref-add-more {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  border: 1px dashed #4b4b57;
+  background: rgba(255, 255, 255, 0.03);
+  color: #d4d4d8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.modix-ai-ref-add-more:hover {
+  border-color: #ffffff;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.modix-ai-msg-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+.modix-ai-msg-ref-thumb {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: #18181c;
+}
+.modix-ai-msg-ref-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.modix-ai-msg-ref-thumb .ref-idx {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #ffffff;
+  font-size: 8.5px;
+  font-weight: 700;
+}
+
+/* Responsive adaptation for compact mobile landscape & portrait */
+@media (max-width: 720px) {
+  .modix-auth-panel {
+    grid-template-columns: 1fr;
+    max-width: 440px;
+  }
+  .modix-auth-showcase {
+    padding: 16px 18px;
+    border-right: none;
+    border-bottom: 1px solid #1f1f25;
+  }
+  .modix-auth-feature-list {
+    display: none;
+  }
+  .modix-auth-card {
+    padding: 18px;
+  }
+}
+
+@media (max-height: 480px) and (orientation: landscape) {
+  .modix-auth-panel {
+    width: min(780px, 96vw);
+  }
+  .modix-auth-showcase {
+    padding: 14px 18px;
+    gap: 10px;
+  }
+  .modix-auth-feature-list {
+    gap: 6px;
+  }
+  .modix-auth-feature-item {
+    padding: 6px 9px;
+  }
   .modix-auth-card {
     padding: 14px 18px;
     gap: 8px;
   }
+  .modix-auth-tabs {
+    padding: 3px;
+  }
+  .modix-auth-tab {
+    height: 29px;
+    font-size: 11.2px;
+  }
+  .modix-auth-form {
+    gap: 7px;
+  }
   .modix-auth-input-wrap {
-    height: 32px;
+    height: 33px;
   }
   .modix-auth-submit {
-    height: 34px;
+    height: 35px;
+    font-size: 12px;
   }
   .modix-projects-topbar {
     height: 46px;
     padding: 0 14px;
   }
+  .modix-account-chip {
+    height: 34px;
+  }
+  .modix-account-avatar {
+    width: 25px;
+    height: 25px;
+  }
   .modix-projects-main {
-    padding: 14px 16px 20px;
+    padding: 12px 16px 22px;
     gap: 12px;
+  }
+  .modix-projects-heading {
+    font-size: 17px;
+  }
+  .modix-create-project-btn {
+    height: 33px;
+    font-size: 11.8px;
   }
 }
 
