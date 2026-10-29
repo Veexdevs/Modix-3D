@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import type {
   ActiveToolId,
+  CollectionGroup,
   EditableMeshData,
+  MaterialData,
   ModixProjectState,
   ObjectKind,
   PrimitiveType,
   SceneObjectData,
-  TransformKeyframe
+  UVProjectionMode
 } from '../types/scene';
 import {
   bevelFaces,
@@ -14,15 +16,19 @@ import {
   catmullClarkSubdivide,
   cloneMeshData,
   computeFaceCenter,
-  computeFaceNormal,
   computeVertexNormals,
   createPrimitiveMesh,
   deleteFaces,
+  displaceMeshNoise,
   evaluateMeshWithModifiers,
   extrudeFaces,
   insetFaces,
   loopCutAxis,
-  subdivideFlat
+  separateLooseParts,
+  sliceMeshByPlane,
+  splitMeshInTwo,
+  subdivideFlat,
+  taperMeshZ
 } from './MeshOperations';
 
 // Enforce Blender Z-up convention globally
@@ -35,6 +41,13 @@ interface RuntimeMeshEntry {
   silhouette: THREE.Mesh;
   triangleToFaceIndex: number[];
   evaluatedMesh: EditableMeshData;
+}
+
+interface LiveTextureEntry {
+  sourceUrl: string;
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  texture: THREE.CanvasTexture;
 }
 
 export class ModixEngine {
@@ -68,9 +81,13 @@ export class ModixEngine {
   private studioRimLight!: THREE.DirectionalLight;
   private sceneLightsGroup = new THREE.Group();
 
-  // Runtime object map
+  // Runtime object & live texture maps
   private meshMap = new Map<string, RuntimeMeshEntry>();
   private helperMap = new Map<string, THREE.Object3D>();
+  private textureCanvases = new Map<string, LiveTextureEntry>();
+
+  // Internal clipboard for Copy / Cut / Paste
+  private clipboard: SceneObjectData[] = [];
 
   // Undo / Redo stacks
   private undoStack: string[] = [];
@@ -89,6 +106,8 @@ export class ModixEngine {
   private lastPinchDist = 0;
   private lastTwoMid = { x: 0, y: 0 };
   private isSculptingStroke = false;
+  private lastPaintUV: { objId: string; u: number; v: number } | null = null;
+  private paintedCanvasObjId: string | null = null;
   private grabBrushIndices: Array<{ idx: number; weight: number; start: [number, number, number] }> = [];
   private activeAnnotation: [number, number, number][] | null = null;
   private activeMeasureIndex: number | null = null;
@@ -131,7 +150,10 @@ export class ModixEngine {
         emissionColor: '#000000',
         emissionStrength: 0,
         opacity: 1,
-        wireframe: false
+        wireframe: false,
+        uvProjection: 'box',
+        repeatX: 1,
+        repeatY: 1
       },
       keyframes: []
     };
@@ -143,7 +165,6 @@ export class ModixEngine {
       collection: 'Collection',
       visible: true,
       selectable: true,
-      // Positioned cleanly to the left of Cube pointing at Cube, matching reference screenshot
       location: [-2.85, -3.35, 0.55],
       rotationDeg: [78, 0, -40],
       rotationMode: 'XYZ Euler',
@@ -178,7 +199,6 @@ export class ModixEngine {
       collection: 'Collection',
       visible: true,
       selectable: true,
-      // Positioned upper-right behind Cube with vertical floor line, matching reference screenshot
       location: [-0.85, 2.25, 2.95],
       rotationDeg: [0, 0, 0],
       rotationMode: 'XYZ Euler',
@@ -207,7 +227,7 @@ export class ModixEngine {
     };
 
     return {
-      version: '1.0.0',
+      version: '2.0.0',
       sceneName: 'Scene',
       viewLayerName: 'ViewLayer',
       workspace: 'Layout',
@@ -225,7 +245,15 @@ export class ModixEngine {
       inCameraView: false,
       viewLabel: 'User Perspective',
       cursor3D: [0, 0, 0],
-      // Order in Outliner matches screenshot: Camera, Cube, Light
+      collections: [
+        {
+          id: 'col_default',
+          name: 'Collection',
+          visible: true,
+          collapsed: false
+        }
+      ],
+      activeCollection: 'Collection',
       objects: [cameraObj, cubeObj, lightObj],
       selectedIds: ['obj_cube'],
       activeObjectId: 'obj_cube',
@@ -244,11 +272,15 @@ export class ModixEngine {
       deltaTransformExpanded: false,
       sculpt: {
         radius: 0.55,
-        strength: 0.35,
+        strength: 0.45,
         symmetryX: true,
         symmetryY: false,
         symmetryZ: false,
-        paintColor: '#ffffff'
+        paintColor: '#3b82f6',
+        paintSecondaryColor: '#ffffff',
+        paintBrushPx: 18,
+        paintOpacity: 1,
+        paintTarget: 'texture'
       },
       world: {
         backgroundColor: '#202020',
@@ -282,6 +314,8 @@ export class ModixEngine {
 
   public pushUndoSnapshot(): void {
     const snap = JSON.stringify({
+      collections: this.state.collections,
+      activeCollection: this.state.activeCollection,
       objects: this.state.objects,
       selectedIds: this.state.selectedIds,
       activeObjectId: this.state.activeObjectId,
@@ -291,7 +325,7 @@ export class ModixEngine {
     });
     if (this.undoStack[this.undoStack.length - 1] !== snap) {
       this.undoStack.push(snap);
-      if (this.undoStack.length > 35) this.undoStack.shift();
+      if (this.undoStack.length > 30) this.undoStack.shift();
       this.redoStack = [];
     }
   }
@@ -299,6 +333,8 @@ export class ModixEngine {
   public undo(): boolean {
     if (this.undoStack.length === 0) return false;
     const current = JSON.stringify({
+      collections: this.state.collections,
+      activeCollection: this.state.activeCollection,
       objects: this.state.objects,
       selectedIds: this.state.selectedIds,
       activeObjectId: this.state.activeObjectId,
@@ -308,6 +344,8 @@ export class ModixEngine {
     });
     this.redoStack.push(current);
     const prev = JSON.parse(this.undoStack.pop()!);
+    this.state.collections = prev.collections || [{ id: 'col_default', name: 'Collection', visible: true, collapsed: false }];
+    this.state.activeCollection = prev.activeCollection || 'Collection';
     this.state.objects = prev.objects;
     this.state.selectedIds = prev.selectedIds;
     this.state.activeObjectId = prev.activeObjectId;
@@ -322,6 +360,8 @@ export class ModixEngine {
   public redo(): boolean {
     if (this.redoStack.length === 0) return false;
     const current = JSON.stringify({
+      collections: this.state.collections,
+      activeCollection: this.state.activeCollection,
       objects: this.state.objects,
       selectedIds: this.state.selectedIds,
       activeObjectId: this.state.activeObjectId,
@@ -331,6 +371,8 @@ export class ModixEngine {
     });
     this.undoStack.push(current);
     const next = JSON.parse(this.redoStack.pop()!);
+    this.state.collections = next.collections || [{ id: 'col_default', name: 'Collection', visible: true, collapsed: false }];
+    this.state.activeCollection = next.activeCollection || 'Collection';
     this.state.objects = next.objects;
     this.state.selectedIds = next.selectedIds;
     this.state.activeObjectId = next.activeObjectId;
@@ -351,7 +393,7 @@ export class ModixEngine {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(this.state.world.backgroundColor);
 
-    this.perspCamera = new THREE.PerspectiveCamera(42, w / h, 0.05, 500);
+    this.perspCamera = new THREE.PerspectiveCamera(42, w / h, 0.05, 600);
     this.perspCamera.up.set(0, 0, 1);
 
     const aspect = w / h;
@@ -362,7 +404,7 @@ export class ModixEngine {
       orthoHalfH,
       -orthoHalfH,
       -200,
-      500
+      600
     );
     this.orthoCamera.up.set(0, 0, 1);
 
@@ -379,7 +421,7 @@ export class ModixEngine {
     this.renderer.domElement.className = 'modix-webgl-canvas';
     container.appendChild(this.renderer.domElement);
 
-    // Setup Studio Solid Shading Lights (gives exact top/left/right Cube luminance from screenshot!)
+    // Studio Solid Shading Lights
     this.studioAmbient = new THREE.AmbientLight(0xffffff, 0.56);
     this.studioKeyLight = new THREE.DirectionalLight(0xffffff, 0.72);
     this.studioKeyLight.position.set(3.5, -5.5, 9.0);
@@ -452,7 +494,6 @@ export class ModixEngine {
     return this.state.isOrthographic ? this.orthoCamera : this.perspCamera;
   }
 
-  /** Returns normalized XYZ basis vectors in screen coordinates for the top-right 3D Navigation Gizmo */
   public getGizmoOrientationScreenAxes(): Array<{
     axis: 'X' | 'Y' | 'Z' | '-X' | '-Y' | '-Z';
     sx: number;
@@ -478,8 +519,8 @@ export class ModixEngine {
         return {
           axis: d.axis,
           sx: v.x,
-          sy: -v.y, // screen Y grows downward
-          sz: v.z,  // depth sorting
+          sy: -v.y,
+          sz: v.z,
           color: d.color,
           positive: d.positive
         };
@@ -553,7 +594,7 @@ export class ModixEngine {
   }
 
   public zoomByFactor(factor: number): void {
-    this.orbitRadius = Math.max(1.2, Math.min(85, this.orbitRadius * factor));
+    this.orbitRadius = Math.max(1.2, Math.min(120, this.orbitRadius * factor));
     this.updateCameraFromOrbit();
     this.handleResize();
   }
@@ -619,17 +660,14 @@ export class ModixEngine {
   private buildViewportGridAndCursor(): void {
     this.overlaysGroup.clear();
 
-    // Subdivided Z-up XY ground grid (#272727 minor, #313131 major) + Red X & Green Y axes
     const size = 24;
     const minorPositions: number[] = [];
     const majorPositions: number[] = [];
 
     for (let i = -size; i <= size; i++) {
-      if (i === 0) continue; // X and Y axes get colored lines
+      if (i === 0) continue;
       const target = i % 5 === 0 ? majorPositions : minorPositions;
-      // Line parallel to X (varying X, constant Y = i)
       target.push(-size, i, 0, size, i, 0);
-      // Line parallel to Y (constant X = i, varying Y)
       target.push(i, -size, 0, i, size, 0);
     }
 
@@ -647,29 +685,20 @@ export class ModixEngine {
       new THREE.LineBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.95 })
     );
 
-    // Red X Axis (-size..size, 0, 0.002)
     const xAxisGeo = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(-size, 0, 0.002),
       new THREE.Vector3(size, 0, 0.002)
     ]);
-    const xAxisLine = new THREE.Line(
-      xAxisGeo,
-      new THREE.LineBasicMaterial({ color: 0xc22f3d })
-    );
+    const xAxisLine = new THREE.Line(xAxisGeo, new THREE.LineBasicMaterial({ color: 0xc22f3d }));
 
-    // Green Y Axis (0, -size..size, 0.002)
     const yAxisGeo = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(0, -size, 0.002),
       new THREE.Vector3(0, size, 0.002)
     ]);
-    const yAxisLine = new THREE.Line(
-      yAxisGeo,
-      new THREE.LineBasicMaterial({ color: 0x629627 })
-    );
+    const yAxisLine = new THREE.Line(yAxisGeo, new THREE.LineBasicMaterial({ color: 0x629627 }));
 
     this.overlaysGroup.add(minorLines, majorLines, xAxisLine, yAxisLine);
 
-    // 3D Cursor Sprite (red/white dashed ring + dark crosshair ticks)
     const canvas = document.createElement('canvas');
     canvas.width = 128;
     canvas.height = 128;
@@ -678,14 +707,12 @@ export class ModixEngine {
     const cy = 64;
     const r = 34;
 
-    // White ring base
     ctx.lineWidth = 5.5;
     ctx.strokeStyle = '#f5f5f5';
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Red dashed segments (8 alternating segments)
     ctx.strokeStyle = '#e03b3b';
     for (let s = 0; s < 4; s++) {
       const a0 = (s * Math.PI) / 2 + 0.2;
@@ -695,7 +722,6 @@ export class ModixEngine {
       ctx.stroke();
     }
 
-    // Black crosshair lines
     ctx.strokeStyle = '#141414';
     ctx.lineWidth = 4;
     const drawTick = (x1: number, y1: number, x2: number, y2: number) => {
@@ -733,6 +759,14 @@ export class ModixEngine {
     return this.state.objects.find((o) => o.id === this.state.activeObjectId) || null;
   }
 
+  public findObjectByNameOrId(query: string): SceneObjectData | null {
+    if (!query) return null;
+    const exact = this.state.objects.find((o) => o.id === query || o.name === query);
+    if (exact) return exact;
+    const lower = query.toLowerCase();
+    return this.state.objects.find((o) => o.name.toLowerCase() === lower) || null;
+  }
+
   public selectObject(id: string | null, additive = false): void {
     if (!id) {
       this.state.selectedIds = [];
@@ -740,7 +774,7 @@ export class ModixEngine {
     } else if (additive) {
       if (this.state.selectedIds.includes(id)) {
         this.state.selectedIds = this.state.selectedIds.filter((x) => x !== id);
-        this.state.activeObjectId = this.state.selectedIds[0] || null;
+        this.state.activeObjectId = this.state.selectedIds[this.state.selectedIds.length - 1] || null;
       } else {
         this.state.selectedIds.push(id);
         this.state.activeObjectId = id;
@@ -753,27 +787,473 @@ export class ModixEngine {
     this.notify();
   }
 
+  // ==========================================================================
+  // COLLECTIONS / GROUPS ("Colocar em Grupo", "Renomear Grupo", etc.)
+  // ==========================================================================
+
+  private ensureCollectionsValid(): void {
+    if (!this.state.collections || this.state.collections.length === 0) {
+      this.state.collections = [{ id: 'col_default', name: 'Collection', visible: true, collapsed: false }];
+    }
+    const known = new Set(this.state.collections.map((c) => c.name));
+    for (const obj of this.state.objects) {
+      if (!obj.collection) obj.collection = 'Collection';
+      if (!known.has(obj.collection)) {
+        this.state.collections.push({
+          id: `col_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+          name: obj.collection,
+          visible: true,
+          collapsed: false
+        });
+        known.add(obj.collection);
+      }
+    }
+    if (!this.state.activeCollection || !known.has(this.state.activeCollection)) {
+      this.state.activeCollection = this.state.collections[0].name;
+    }
+  }
+
+  public createCollection(baseName = 'Group', color?: string): CollectionGroup {
+    this.ensureCollectionsValid();
+    this.pushUndoSnapshot();
+    const existing = new Set(this.state.collections.map((c) => c.name));
+    let name = baseName.trim() || 'Group';
+    if (existing.has(name)) {
+      for (let i = 1; i < 999; i++) {
+        const cand = `${name}.${String(i).padStart(3, '0')}`;
+        if (!existing.has(cand)) {
+          name = cand;
+          break;
+        }
+      }
+    }
+    const group: CollectionGroup = {
+      id: `col_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name,
+      visible: true,
+      collapsed: false,
+      color
+    };
+    this.state.collections.push(group);
+    this.state.activeCollection = name;
+    this.notify();
+    return group;
+  }
+
+  public renameCollection(oldName: string, rawNewName: string): boolean {
+    const newName = rawNewName.trim();
+    if (!newName || oldName === newName) return false;
+    this.ensureCollectionsValid();
+    if (this.state.collections.some((c) => c.name === newName)) return false;
+
+    this.pushUndoSnapshot();
+    const col = this.state.collections.find((c) => c.name === oldName);
+    if (col) col.name = newName;
+    for (const obj of this.state.objects) {
+      if (obj.collection === oldName) obj.collection = newName;
+    }
+    if (this.state.activeCollection === oldName) {
+      this.state.activeCollection = newName;
+    }
+    this.notify();
+    return true;
+  }
+
+  public deleteCollection(name: string, deleteObjectsInside = false): void {
+    this.ensureCollectionsValid();
+    if (this.state.collections.length <= 1 && !deleteObjectsInside) return;
+    this.pushUndoSnapshot();
+
+    if (deleteObjectsInside) {
+      const removedIds = new Set(
+        this.state.objects.filter((o) => o.collection === name).map((o) => o.id)
+      );
+      this.state.objects = this.state.objects.filter((o) => o.collection !== name);
+      this.state.selectedIds = this.state.selectedIds.filter((id) => !removedIds.has(id));
+      if (this.state.activeObjectId && removedIds.has(this.state.activeObjectId)) {
+        this.state.activeObjectId = this.state.selectedIds[0] || this.state.objects[0]?.id || null;
+      }
+    }
+
+    if (this.state.collections.length > 1) {
+      this.state.collections = this.state.collections.filter((c) => c.name !== name);
+    }
+    const fallback = this.state.collections[0]?.name || 'Collection';
+    if (!deleteObjectsInside) {
+      for (const obj of this.state.objects) {
+        if (obj.collection === name) obj.collection = fallback;
+      }
+    }
+    if (this.state.activeCollection === name) {
+      this.state.activeCollection = fallback;
+    }
+    this.rebuildSceneObjects();
+    this.notify();
+  }
+
+  public toggleCollectionCollapsed(name: string): void {
+    const col = this.state.collections.find((c) => c.name === name);
+    if (!col) return;
+    col.collapsed = !col.collapsed;
+    this.notify();
+  }
+
+  public toggleCollectionVisible(name: string): void {
+    const col = this.state.collections.find((c) => c.name === name);
+    if (!col) return;
+    col.visible = !col.visible;
+    for (const obj of this.state.objects) {
+      if (obj.collection === name) {
+        obj.visible = col.visible;
+      }
+    }
+    this.rebuildSceneObjects();
+    this.notify();
+  }
+
+  public selectCollectionObjects(name: string): void {
+    const ids = this.state.objects.filter((o) => o.collection === name).map((o) => o.id);
+    this.state.activeCollection = name;
+    if (ids.length > 0) {
+      this.state.selectedIds = ids;
+      this.state.activeObjectId = ids[0];
+    }
+    this.rebuildSceneObjects();
+    this.notify();
+  }
+
+  public moveObjectsToCollection(ids: string[], targetCollection: string): void {
+    if (ids.length === 0) return;
+    this.ensureCollectionsValid();
+    if (!this.state.collections.some((c) => c.name === targetCollection)) {
+      this.createCollection(targetCollection);
+    } else {
+      this.pushUndoSnapshot();
+    }
+    const idSet = new Set(ids);
+    for (const obj of this.state.objects) {
+      if (idSet.has(obj.id)) {
+        obj.collection = targetCollection;
+      }
+    }
+    this.state.activeCollection = targetCollection;
+    this.notify();
+  }
+
+  public groupSelectedIntoNewCollection(groupName = 'Grupo'): CollectionGroup | null {
+    if (this.state.selectedIds.length === 0) return null;
+    const grp = this.createCollection(groupName);
+    const idSet = new Set(this.state.selectedIds);
+    for (const obj of this.state.objects) {
+      if (idSet.has(obj.id)) obj.collection = grp.name;
+    }
+    this.notify();
+    return grp;
+  }
+
+  public ungroupSelected(): void {
+    const defaultCol = this.state.collections[0]?.name || 'Collection';
+    this.moveObjectsToCollection(this.state.selectedIds, defaultCol);
+  }
+
+  // ==========================================================================
+  // RENAME, COPY, CUT, PASTE, JOIN ("Unir"), SEPARATE & SLICE ("Recortar 3D")
+  // ==========================================================================
+
+  public renameObject(id: string, rawNewName: string): boolean {
+    const clean = rawNewName.trim();
+    if (!clean) return false;
+    const obj = this.state.objects.find((o) => o.id === id);
+    if (!obj || obj.name === clean) return false;
+    this.pushUndoSnapshot();
+    obj.name = this.makeUniqueName(clean, id);
+    this.notify();
+    return true;
+  }
+
+  public hasClipboard(): boolean {
+    return this.clipboard.length > 0;
+  }
+
+  public copySelected(): number {
+    const selSet = new Set(this.state.selectedIds);
+    const chosen = this.state.objects.filter((o) => selSet.has(o.id));
+    if (chosen.length === 0) return 0;
+    this.clipboard = JSON.parse(JSON.stringify(chosen));
+    return this.clipboard.length;
+  }
+
+  public cutSelected(): number {
+    const count = this.copySelected();
+    if (count > 0) {
+      this.deleteSelected();
+    }
+    return count;
+  }
+
+  public pasteClipboard(offset: [number, number, number] = [0.6, 0.6, 0]): SceneObjectData[] {
+    if (this.clipboard.length === 0) return [];
+    this.pushUndoSnapshot();
+    const pasted: SceneObjectData[] = [];
+    for (const src of this.clipboard) {
+      const clone: SceneObjectData = JSON.parse(JSON.stringify(src));
+      clone.id = `obj_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      clone.name = this.makeUniqueName(src.name.replace(/\.\d+$/, ''));
+      clone.collection = this.state.activeCollection || src.collection || 'Collection';
+      clone.location = [
+        Number((src.location[0] + offset[0]).toFixed(3)),
+        Number((src.location[1] + offset[1]).toFixed(3)),
+        Number((src.location[2] + offset[2]).toFixed(3))
+      ];
+      this.state.objects.push(clone);
+      pasted.push(clone);
+    }
+    this.state.selectedIds = pasted.map((p) => p.id);
+    this.state.activeObjectId = pasted[pasted.length - 1]?.id || null;
+    this.rebuildSceneObjects();
+    this.notify();
+    return pasted;
+  }
+
+  private getObjectMatrix4(obj: SceneObjectData): THREE.Matrix4 {
+    const pos = new THREE.Vector3(
+      obj.location[0] + obj.deltaLocation[0],
+      obj.location[1] + obj.deltaLocation[1],
+      obj.location[2] + obj.deltaLocation[2]
+    );
+    const euler = new THREE.Euler(
+      THREE.MathUtils.degToRad(obj.rotationDeg[0] + obj.deltaRotationDeg[0]),
+      THREE.MathUtils.degToRad(obj.rotationDeg[1] + obj.deltaRotationDeg[1]),
+      THREE.MathUtils.degToRad(obj.rotationDeg[2] + obj.deltaRotationDeg[2]),
+      'XYZ'
+    );
+    const quat = new THREE.Quaternion().setFromEuler(euler);
+    const scl = new THREE.Vector3(
+      obj.scale[0] * obj.deltaScale[0],
+      obj.scale[1] * obj.deltaScale[1],
+      obj.scale[2] * obj.deltaScale[2]
+    );
+    return new THREE.Matrix4().compose(pos, quat, scl);
+  }
+
+  /** Joins (unites) 2 or more selected MESH objects into the active object cleanly in world space */
+  public joinSelected(): SceneObjectData | null {
+    const selMeshes = this.state.objects.filter(
+      (o) => this.state.selectedIds.includes(o.id) && o.kind === 'MESH' && o.mesh
+    );
+    if (selMeshes.length < 2) return null;
+
+    const target =
+      selMeshes.find((o) => o.id === this.state.activeObjectId) || selMeshes[0];
+    this.pushUndoSnapshot();
+
+    const targetWorldMat = this.getObjectMatrix4(target);
+    const invTargetMat = targetWorldMat.clone().invert();
+
+    const mergedVertices: [number, number, number][] = [];
+    const mergedFaces: number[][] = [];
+    const mergedColors: [number, number, number][] = [];
+    let anyColors = false;
+    const v = new THREE.Vector3();
+
+    for (const part of selMeshes) {
+      const evaluated = evaluateMeshWithModifiers(part.mesh!, part.modifiers);
+      const partMat = this.getObjectMatrix4(part);
+      const toTargetLocal = invTargetMat.clone().multiply(partMat);
+      const baseV = mergedVertices.length;
+      const col = new THREE.Color(part.material.baseColor || '#9a9a9a');
+
+      evaluated.vertices.forEach(([x, y, z], vi) => {
+        v.set(x, y, z).applyMatrix4(toTargetLocal);
+        mergedVertices.push([v.x, v.y, v.z]);
+        if (evaluated.vertexColors && evaluated.vertexColors[vi]) {
+          mergedColors.push([...evaluated.vertexColors[vi]]);
+          anyColors = true;
+        } else {
+          mergedColors.push([col.r, col.g, col.b]);
+          if (part.material.baseColor !== target.material.baseColor) {
+            anyColors = true;
+          }
+        }
+      });
+
+      for (const f of evaluated.faces) {
+        mergedFaces.push(f.map((idx) => idx + baseV));
+      }
+    }
+
+    target.mesh = {
+      vertices: mergedVertices,
+      faces: mergedFaces,
+      shadeSmooth: target.mesh?.shadeSmooth ?? false,
+      vertexColors: anyColors ? mergedColors : undefined
+    };
+    target.modifiers = [];
+
+    const removeSet = new Set(selMeshes.filter((o) => o.id !== target.id).map((o) => o.id));
+    this.state.objects = this.state.objects.filter((o) => !removeSet.has(o.id));
+    this.state.selectedIds = [target.id];
+    this.state.activeObjectId = target.id;
+    this.rebuildSceneObjects();
+    this.notify();
+    return target;
+  }
+
+  /** Separates disconnected mesh islands into individual objects */
+  public separateSelectedByLooseParts(): SceneObjectData[] {
+    const active = this.getActiveObject();
+    if (!active || active.kind !== 'MESH' || !active.mesh) return [];
+    const evaluated = evaluateMeshWithModifiers(active.mesh, active.modifiers);
+    const parts = separateLooseParts(evaluated);
+    if (parts.length <= 1) return [active];
+
+    this.pushUndoSnapshot();
+    active.mesh = parts[0];
+    active.modifiers = [];
+    const created: SceneObjectData[] = [active];
+
+    for (let i = 1; i < parts.length; i++) {
+      const clone: SceneObjectData = JSON.parse(JSON.stringify(active));
+      clone.id = `obj_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 5)}`;
+      clone.name = this.makeUniqueName(`${active.name}_Part`);
+      clone.mesh = parts[i];
+      this.state.objects.push(clone);
+      created.push(clone);
+    }
+
+    this.state.selectedIds = created.map((c) => c.id);
+    this.rebuildSceneObjects();
+    this.notify();
+    return created;
+  }
+
+  /** Cuts / Slices active mesh along a plane ('split' into 2 objects or trim one half) */
+  public sliceActiveMesh(
+    axis: 'X' | 'Y' | 'Z' | 'CUSTOM',
+    mode: 'split' | 'keep_pos' | 'keep_neg' = 'split',
+    offset = 0,
+    customNormal?: [number, number, number],
+    separationGap = 0.08
+  ): SceneObjectData[] {
+    const active = this.getActiveObject();
+    if (!active || active.kind !== 'MESH' || !active.mesh) return [];
+    this.pushUndoSnapshot();
+
+    const evaluated = evaluateMeshWithModifiers(active.mesh, active.modifiers);
+    const normal: [number, number, number] =
+      axis === 'X'
+        ? [1, 0, 0]
+        : axis === 'Y'
+          ? [0, 1, 0]
+          : axis === 'Z'
+            ? [0, 0, 1]
+            : customNormal || [0, 0, 1];
+    const axisIdx: 0 | 1 | 2 =
+      axis === 'X'
+        ? 0
+        : axis === 'Y'
+          ? 1
+          : axis === 'Z'
+            ? 2
+            : Math.abs(normal[0]) >= Math.abs(normal[1]) && Math.abs(normal[0]) >= Math.abs(normal[2])
+              ? 0
+              : Math.abs(normal[1]) >= Math.abs(normal[2])
+                ? 1
+                : 2;
+
+    if (mode === 'keep_pos' || mode === 'keep_neg') {
+      const sliced = sliceMeshByPlane(
+        evaluated,
+        axisIdx,
+        offset,
+        mode === 'keep_pos' ? 'positive' : 'negative',
+        true
+      );
+      if (sliced.faces.length > 0) {
+        active.mesh = sliced;
+        active.modifiers = [];
+      }
+      this.rebuildSceneObjects();
+      this.notify();
+      return [active];
+    }
+
+    // Split into two separate objects with sealed caps!
+    const { positive, negative } = splitMeshInTwo(evaluated, axisIdx, offset);
+    if (positive.faces.length === 0 || negative.faces.length === 0) {
+      return [active];
+    }
+
+    active.mesh = negative;
+    active.modifiers = [];
+    const second: SceneObjectData = JSON.parse(JSON.stringify(active));
+    second.id = `obj_${Date.now()}_cut_${Math.random().toString(36).slice(2, 6)}`;
+    second.name = this.makeUniqueName(`${active.name}_Cut`);
+    second.mesh = positive;
+
+    // Slight visual separation along cut normal if requested
+    if (separationGap > 0) {
+      active.location = [
+        Number((active.location[0] - normal[0] * separationGap * 0.5).toFixed(3)),
+        Number((active.location[1] - normal[1] * separationGap * 0.5).toFixed(3)),
+        Number((active.location[2] - normal[2] * separationGap * 0.5).toFixed(3))
+      ];
+      second.location = [
+        Number((second.location[0] + normal[0] * separationGap * 0.5).toFixed(3)),
+        Number((second.location[1] + normal[1] * separationGap * 0.5).toFixed(3)),
+        Number((second.location[2] + normal[2] * separationGap * 0.5).toFixed(3))
+      ];
+    }
+
+    this.state.objects.push(second);
+    this.state.selectedIds = [active.id, second.id];
+    this.state.activeObjectId = second.id;
+    this.rebuildSceneObjects();
+    this.notify();
+    return [active, second];
+  }
+
+  // ==========================================================================
+  // PRIMITIVES, CUSTOM MESHES & DEFORMERS
+  // ==========================================================================
+
   public addPrimitive(type: PrimitiveType): SceneObjectData {
+    this.ensureCollectionsValid();
     this.pushUndoSnapshot();
     const baseNames: Record<PrimitiveType, string> = {
       cube: 'Cube',
       plane: 'Plane',
+      grid: 'Grid',
       uv_sphere: 'Sphere',
       ico_sphere: 'Icosphere',
       cylinder: 'Cylinder',
+      hex_cylinder: 'Hexagon',
       cone: 'Cone',
+      pyramid: 'Pyramid',
+      wedge: 'Wedge',
+      corner_wedge: 'CornerWedge',
+      prism: 'Prism',
       torus: 'Torus',
+      torus_knot: 'TorusKnot',
       capsule: 'Capsule',
+      pipe: 'Pipe',
+      arch: 'Arch',
+      stairs: 'Stairs',
+      star: 'Star',
+      gear: 'Gear',
+      ring: 'Ring',
+      crystal: 'Crystal',
+      heart: 'Heart',
       monkey: 'Suzanne'
     };
-    const base = baseNames[type];
+    const base = baseNames[type] || 'Mesh';
     const name = this.makeUniqueName(base);
 
     const newObj: SceneObjectData = {
       id: `obj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       name,
       kind: 'MESH',
-      collection: 'Collection',
+      collection: this.state.activeCollection || 'Collection',
       visible: true,
       selectable: true,
       location: [...this.state.cursor3D],
@@ -797,7 +1277,10 @@ export class ModixEngine {
         emissionColor: '#000000',
         emissionStrength: 0,
         opacity: 1,
-        wireframe: false
+        wireframe: false,
+        uvProjection: 'box',
+        repeatX: 1,
+        repeatY: 1
       },
       keyframes: []
     };
@@ -811,6 +1294,7 @@ export class ModixEngine {
   }
 
   public addSceneNonMesh(kind: Exclude<ObjectKind, 'MESH'>): SceneObjectData {
+    this.ensureCollectionsValid();
     this.pushUndoSnapshot();
     const base = kind === 'LIGHT' ? 'Light' : kind === 'CAMERA' ? 'Camera' : 'Empty';
     const name = this.makeUniqueName(base);
@@ -818,7 +1302,7 @@ export class ModixEngine {
       id: `obj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       name,
       kind,
-      collection: 'Collection',
+      collection: this.state.activeCollection || 'Collection',
       visible: true,
       selectable: true,
       location: [...this.state.cursor3D],
@@ -858,17 +1342,23 @@ export class ModixEngine {
     return obj;
   }
 
-  public addImportedMesh(nameBase: string, mesh: EditableMeshData): SceneObjectData {
+  public addImportedMesh(
+    nameBase: string,
+    mesh: EditableMeshData,
+    materialOverrides?: Partial<MaterialData>,
+    customLocation?: [number, number, number]
+  ): SceneObjectData {
+    this.ensureCollectionsValid();
     this.pushUndoSnapshot();
     const name = this.makeUniqueName(nameBase || 'Imported');
     const obj: SceneObjectData = {
       id: `obj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       name,
       kind: 'MESH',
-      collection: 'Collection',
+      collection: this.state.activeCollection || 'Collection',
       visible: true,
       selectable: true,
-      location: [...this.state.cursor3D],
+      location: customLocation ? [...customLocation] : [...this.state.cursor3D],
       rotationDeg: [0, 0, 0],
       rotationMode: 'XYZ Euler',
       scale: [1, 1, 1],
@@ -888,7 +1378,11 @@ export class ModixEngine {
         emissionColor: '#000000',
         emissionStrength: 0,
         opacity: 1,
-        wireframe: false
+        wireframe: false,
+        uvProjection: 'box',
+        repeatX: 1,
+        repeatY: 1,
+        ...materialOverrides
       },
       keyframes: []
     };
@@ -900,21 +1394,46 @@ export class ModixEngine {
     return obj;
   }
 
-  public duplicateSelected(): void {
-    const active = this.getActiveObject();
-    if (!active) return;
+  public deformMeshObject(
+    objId: string,
+    op: { type: 'noise'; amplitude: number; frequency?: number } | { type: 'taper'; topScale: number } | { type: 'smooth'; levels?: number }
+  ): void {
+    const obj = this.state.objects.find((o) => o.id === objId);
+    if (!obj || obj.kind !== 'MESH' || !obj.mesh) return;
     this.pushUndoSnapshot();
-    const clone: SceneObjectData = JSON.parse(JSON.stringify(active));
-    clone.id = `obj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    clone.name = this.makeUniqueName(active.name.replace(/\.\d+$/, ''));
-    clone.location = [
-      active.location[0] + 0.6,
-      active.location[1] + 0.6,
-      active.location[2]
-    ];
-    this.state.objects.push(clone);
-    this.state.selectedIds = [clone.id];
-    this.state.activeObjectId = clone.id;
+    if (op.type === 'noise') {
+      obj.mesh = displaceMeshNoise(obj.mesh, op.amplitude, op.frequency ?? 1.8);
+    } else if (op.type === 'taper') {
+      obj.mesh = taperMeshZ(obj.mesh, op.topScale);
+    } else if (op.type === 'smooth') {
+      obj.mesh = catmullClarkSubdivide(obj.mesh, Math.min(2, Math.max(1, op.levels ?? 1)));
+      obj.mesh.shadeSmooth = true;
+    }
+    this.rebuildSceneObjects();
+    this.notify();
+  }
+
+  public duplicateSelected(): void {
+    const selSet = new Set(this.state.selectedIds);
+    const chosen = this.state.objects.filter((o) => selSet.has(o.id));
+    if (chosen.length === 0) return;
+    this.pushUndoSnapshot();
+
+    const clones: SceneObjectData[] = [];
+    for (const active of chosen) {
+      const clone: SceneObjectData = JSON.parse(JSON.stringify(active));
+      clone.id = `obj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      clone.name = this.makeUniqueName(active.name.replace(/\.\d+$/, ''));
+      clone.location = [
+        Number((active.location[0] + 0.6).toFixed(3)),
+        Number((active.location[1] + 0.6).toFixed(3)),
+        active.location[2]
+      ];
+      this.state.objects.push(clone);
+      clones.push(clone);
+    }
+    this.state.selectedIds = clones.map((c) => c.id);
+    this.state.activeObjectId = clones[clones.length - 1]?.id || null;
     this.rebuildSceneObjects();
     this.notify();
   }
@@ -927,10 +1446,124 @@ export class ModixEngine {
     if (this.state.selectedIds.length === 0) return;
     this.pushUndoSnapshot();
     const drop = new Set(this.state.selectedIds);
+    for (const id of drop) this.disposeObjectTexture(id);
     this.state.objects = this.state.objects.filter((o) => !drop.has(o.id));
     this.state.selectedIds = [];
     this.state.activeObjectId = this.state.objects[0]?.id || null;
     if (this.state.activeObjectId) this.state.selectedIds = [this.state.activeObjectId];
+    this.rebuildSceneObjects();
+    this.notify();
+  }
+
+  public clearAllMeshObjects(): void {
+    this.pushUndoSnapshot();
+    const meshIds = this.state.objects.filter((o) => o.kind === 'MESH').map((o) => o.id);
+    for (const id of meshIds) this.disposeObjectTexture(id);
+    this.state.objects = this.state.objects.filter((o) => o.kind !== 'MESH');
+    this.state.selectedIds = [];
+    this.state.activeObjectId = null;
+    this.rebuildSceneObjects();
+    this.notify();
+  }
+
+  // ==========================================================================
+  // TEXTURE SYSTEM & 3D VIEWPORT UV TEXTURE PAINTING
+  // ==========================================================================
+
+  private disposeObjectTexture(objId: string): void {
+    const entry = this.textureCanvases.get(objId);
+    if (entry) {
+      entry.texture.dispose();
+      this.textureCanvases.delete(objId);
+    }
+  }
+
+  public getOrCreateLiveTexture(obj: SceneObjectData, createBlankIfMissing = false): LiveTextureEntry | null {
+    const url = obj.material.textureDataUrl;
+    if (!url && !createBlankIfMissing) {
+      this.disposeObjectTexture(obj.id);
+      return null;
+    }
+
+    const existing = this.textureCanvases.get(obj.id);
+    if (existing && url && existing.sourceUrl === url) {
+      existing.texture.repeat.set(obj.material.repeatX ?? 1, obj.material.repeatY ?? 1);
+      return existing;
+    }
+
+    // Create 512x512 live paintable canvas
+    const canvas = existing?.canvas || document.createElement('canvas');
+    if (!existing) {
+      canvas.width = 512;
+      canvas.height = 512;
+    }
+    const ctx = canvas.getContext('2d')!;
+    const fillHex = obj.material.baseColor && obj.material.baseColor !== '#9a9a9a'
+      ? obj.material.baseColor
+      : '#e5e7eb';
+
+    if (!url && createBlankIfMissing) {
+      ctx.fillStyle = fillHex;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const blankUrl = canvas.toDataURL('image/png');
+      obj.material.textureDataUrl = blankUrl;
+      obj.material.textureName = obj.material.textureName || `${obj.name}_Paint.png`;
+    }
+
+    const texture = existing?.texture || new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(obj.material.repeatX ?? 1, obj.material.repeatY ?? 1);
+
+    const activeUrl = obj.material.textureDataUrl!;
+    const entry: LiveTextureEntry = {
+      sourceUrl: activeUrl,
+      canvas,
+      ctx,
+      texture
+    };
+    this.textureCanvases.set(obj.id, entry);
+
+    if (url) {
+      const img = new Image();
+      img.onload = () => {
+        if (this.textureCanvases.get(obj.id)?.sourceUrl === activeUrl) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          texture.needsUpdate = true;
+          this.renderFrame();
+        }
+      };
+      img.src = activeUrl;
+    } else {
+      texture.needsUpdate = true;
+    }
+
+    return entry;
+  }
+
+  public applyTextureDataUrl(
+    objId: string,
+    dataUrl: string | undefined,
+    textureName?: string,
+    uvProjection?: UVProjectionMode
+  ): void {
+    const obj = this.state.objects.find((o) => o.id === objId);
+    if (!obj) return;
+    this.pushUndoSnapshot();
+    obj.material.textureDataUrl = dataUrl;
+    obj.material.textureName = dataUrl ? (textureName || `${obj.name}_Texture.png`) : undefined;
+    if (uvProjection) obj.material.uvProjection = uvProjection;
+    if (!dataUrl) {
+      this.disposeObjectTexture(obj.id);
+    } else {
+      // Keep baseColor neutral white if still default gray so texture shows full brightness
+      if (obj.material.baseColor === '#9a9a9a') {
+        obj.material.baseColor = '#ffffff';
+      }
+      this.disposeObjectTexture(obj.id);
+    }
     this.rebuildSceneObjects();
     this.notify();
   }
@@ -1035,7 +1668,6 @@ export class ModixEngine {
     const f = Math.max(this.state.startFrame, Math.min(this.state.endFrame, Math.round(frame)));
     this.state.currentFrame = f;
 
-    // Evaluate keyframes on all animated objects
     for (const obj of this.state.objects) {
       if (obj.keyframes.length === 0) continue;
       this.evaluateObjectKeyframesAt(obj, f);
@@ -1067,7 +1699,6 @@ export class ModixEngine {
         const k1 = keys[i + 1];
         if (frame >= k0.frame && frame <= k1.frame) {
           const t = (frame - k0.frame) / Math.max(1, k1.frame - k0.frame);
-          // Smoothstep Hermite easing like Blender Bezier default
           const s = t * t * (3 - 2 * t);
           const a = k0[ch]!;
           const b = k1[ch]!;
@@ -1082,8 +1713,10 @@ export class ModixEngine {
     }
   }
 
-  private makeUniqueName(base: string): string {
-    const existing = new Set(this.state.objects.map((o) => o.name));
+  public makeUniqueName(base: string, ignoreId?: string): string {
+    const existing = new Set(
+      this.state.objects.filter((o) => o.id !== ignoreId).map((o) => o.name)
+    );
     if (!existing.has(base)) return base;
     for (let i = 1; i < 999; i++) {
       const candidate = `${base}.${String(i).padStart(3, '0')}`;
@@ -1119,11 +1752,10 @@ export class ModixEngine {
     }
   }
 
-  /** Full rebuild of Three.js scene objects, lights, wireframes, silhouettes, Edit Mode handles & Gizmos */
   public rebuildSceneObjects(): void {
     if (!this.scene) return;
+    this.ensureCollectionsValid();
 
-    // Clear previous groups cleanly
     this.objectsGroup.clear();
     this.sceneLightsGroup.clear();
     this.editHelpersGroup.clear();
@@ -1141,7 +1773,6 @@ export class ModixEngine {
       );
     }
 
-    // Configure lighting mode
     const shading = this.state.shading;
     if (shading === 'RENDERED') {
       this.studioAmbient.intensity = 0.25 * this.state.world.ambientStrength;
@@ -1154,9 +1785,8 @@ export class ModixEngine {
       this.studioFillLight.intensity = 0.45;
       this.studioRimLight.intensity = 0.3;
     } else {
-      // SOLID or WIREFRAME
-      this.studioAmbient.intensity = 0.54;
-      this.studioKeyLight.intensity = 0.72;
+      this.studioAmbient.intensity = 0.56;
+      this.studioKeyLight.intensity = 0.74;
       this.studioFillLight.intensity = 0.28;
       this.studioRimLight.intensity = 0.14;
     }
@@ -1168,17 +1798,18 @@ export class ModixEngine {
       if (obj.kind === 'MESH' && obj.mesh) {
         const evaluated =
           isActive && this.state.mode === 'EDIT'
-            ? cloneMeshData(obj.mesh) // Edit raw cage in Edit Mode!
+            ? cloneMeshData(obj.mesh)
             : evaluateMeshWithModifiers(obj.mesh, obj.modifiers);
 
-        const built = buildThreeGeometries(evaluated);
+        const uvMode = obj.material.uvProjection ?? 'box';
+        const built = buildThreeGeometries(evaluated, uvMode, 1, 1);
         const root = new THREE.Group();
         root.userData = { objectId: obj.id };
 
-        // Surface Material
         let surfaceMat: THREE.Material;
         const xrayOpacity = this.state.xray ? 0.45 : obj.material.opacity;
         const isTransparent = this.state.xray || xrayOpacity < 1;
+        const liveTex = this.getOrCreateLiveTexture(obj, false);
 
         if (shading === 'WIREFRAME') {
           surfaceMat = new THREE.MeshBasicMaterial({
@@ -1187,13 +1818,26 @@ export class ModixEngine {
             opacity: 0.01,
             depthWrite: false
           });
-        } else if (shading === 'SOLID') {
+        } else if (shading === 'SOLID' && this.state.mode !== 'TEXTURE_PAINT') {
           const hasPaint = Boolean(evaluated.vertexColors && evaluated.vertexColors.length > 0);
+          const hasCustomColor =
+            Boolean(obj.material.baseColor) && obj.material.baseColor.toLowerCase() !== '#9a9a9a';
+          const solidHex = hasPaint
+            ? '#ffffff'
+            : liveTex
+              ? obj.material.baseColor || '#ffffff'
+              : hasCustomColor
+                ? obj.material.baseColor
+                : '#9c9c9c';
+
           surfaceMat = new THREE.MeshStandardMaterial({
-            color: hasPaint ? 0xffffff : 0x9c9c9c,
+            color: new THREE.Color(solidHex),
+            map: liveTex ? liveTex.texture : null,
             vertexColors: hasPaint,
-            roughness: 0.68,
-            metalness: 0.05,
+            roughness: hasCustomColor || liveTex ? obj.material.roughness : 0.68,
+            metalness: hasCustomColor || liveTex ? obj.material.metallic : 0.05,
+            emissive: new THREE.Color(obj.material.emissionColor || '#000000'),
+            emissiveIntensity: obj.material.emissionStrength || 0,
             transparent: isTransparent,
             opacity: xrayOpacity,
             polygonOffset: true,
@@ -1201,10 +1845,13 @@ export class ModixEngine {
             polygonOffsetUnits: 1
           });
         } else {
-          // MATERIAL or RENDERED uses full PBR MaterialData
+          // MATERIAL, RENDERED, or TEXTURE_PAINT mode
           surfaceMat = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(obj.material.baseColor),
-            vertexColors: Boolean(evaluated.vertexColors),
+            color: new THREE.Color(
+              liveTex && obj.material.baseColor === '#9a9a9a' ? '#ffffff' : obj.material.baseColor
+            ),
+            map: liveTex ? liveTex.texture : null,
+            vertexColors: Boolean(evaluated.vertexColors && evaluated.vertexColors.length > 0),
             metalness: obj.material.metallic,
             roughness: obj.material.roughness,
             emissive: new THREE.Color(obj.material.emissionColor),
@@ -1224,7 +1871,6 @@ export class ModixEngine {
         surface.userData = { objectId: obj.id };
         root.add(surface);
 
-        // Polygon Wireframe Overlay (shown in Wireframe mode or Edit Mode)
         const showWire =
           shading === 'WIREFRAME' ||
           (isActive && this.state.mode === 'EDIT') ||
@@ -1243,9 +1889,8 @@ export class ModixEngine {
         wireOverlay.visible = showWire;
         root.add(wireOverlay);
 
-        // Crisp Blender Orange Selection Silhouette Hull (#f58b20)
+        // Selection Silhouette Hull
         const silhouetteGeo = built.surfaceGeometry.clone();
-        // Compute smooth vertex normals per vertex position so cube corners stay watertight!
         const posAttr = silhouetteGeo.getAttribute('position');
         const smoothMap = new Map<string, THREE.Vector3>();
         const nAttr = silhouetteGeo.getAttribute('normal');
@@ -1301,7 +1946,6 @@ export class ModixEngine {
           this.state.mode === 'OBJECT';
         root.add(silhouette);
 
-        // Origin orange dot on selected object
         if (this.state.showOverlays && isSelected) {
           const dotGeo = new THREE.BufferGeometry();
           dotGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
@@ -1329,7 +1973,6 @@ export class ModixEngine {
           evaluatedMesh: evaluated
         });
 
-        // Edit Mode Vertex / Selected Face Overlays
         if (isActive && this.state.mode === 'EDIT' && obj.visible) {
           this.buildEditModeOverlays(obj, evaluated, root);
         }
@@ -1344,7 +1987,6 @@ export class ModixEngine {
         this.objectsGroup.add(lightHelper);
         this.helperMap.set(obj.id, lightHelper);
 
-        // Real Three.js Light for Rendered Shading
         if (obj.visible) {
           const color = new THREE.Color(obj.lightColor || '#ffffff');
           if (obj.lightKind === 'SUN') {
@@ -1367,7 +2009,6 @@ export class ModixEngine {
       }
     }
 
-    // Ground shadow catcher in RENDERED mode
     if (shading === 'RENDERED') {
       const ground = new THREE.Mesh(
         new THREE.PlaneGeometry(50, 50),
@@ -1383,23 +2024,19 @@ export class ModixEngine {
     this.rebuildGizmo();
   }
 
-  /** Builds the exact black wireframe Camera frustum + solid black top triangle from the screenshot */
   private createBlenderCameraWireframe(obj: SceneObjectData, isSelected: boolean): THREE.Group {
     const group = new THREE.Group();
     group.userData = { objectId: obj.id };
     const col = isSelected ? 0xf58b20 : 0x050505;
 
-    // Camera local coordinates: lens looks down -Z, up is +Y
     const w = 0.62;
     const h = 0.42;
     const d = -1.05;
     const pts = [
-      // Pyramid edges from apex (0,0,0) to image plane
       0, 0, 0, -w, -h, d,
       0, 0, 0, w, -h, d,
       0, 0, 0, w, h, d,
       0, 0, 0, -w, h, d,
-      // Image plane rectangle
       -w, -h, d, w, -h, d,
       w, -h, d, w, h, d,
       w, h, d, -w, h, d,
@@ -1407,13 +2044,8 @@ export class ModixEngine {
     ];
     const lineGeo = new THREE.BufferGeometry();
     lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    const frustumLines = new THREE.LineSegments(
-      lineGeo,
-      new THREE.LineBasicMaterial({ color: col })
-    );
-    group.add(frustumLines);
+    group.add(new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({ color: col })));
 
-    // Solid top up-indicator triangle above top edge of camera frame
     const triGeo = new THREE.BufferGeometry();
     triGeo.setAttribute(
       'position',
@@ -1429,7 +2061,6 @@ export class ModixEngine {
     triMesh.userData = { objectId: obj.id };
     group.add(triMesh);
 
-    // Invisible pick box for easy touch selection
     const hitBox = new THREE.Mesh(
       new THREE.BoxGeometry(1.3, 1.0, 1.2),
       new THREE.MeshBasicMaterial({ visible: false })
@@ -1441,19 +2072,16 @@ export class ModixEngine {
     return group;
   }
 
-  /** Builds the exact black Point Light sun-ring + vertical ground drop stalk from the screenshot */
   private createBlenderLightHelper(obj: SceneObjectData, isSelected: boolean): THREE.Group {
     const group = new THREE.Group();
     group.userData = { objectId: obj.id };
     const col = isSelected ? 0xf58b20 : 0x080808;
 
-    // Center dot
     const dotGeo = new THREE.SphereGeometry(0.08, 10, 10);
     const dot = new THREE.Mesh(dotGeo, new THREE.MeshBasicMaterial({ color: col }));
     dot.userData = { objectId: obj.id };
     group.add(dot);
 
-    // Dashed outer ring billboard / 3-axis rings
     const segs = 16;
     const ringPts: number[] = [];
     const r = 0.26;
@@ -1467,7 +2095,6 @@ export class ModixEngine {
     ringGeo.setAttribute('position', new THREE.Float32BufferAttribute(ringPts, 3));
     group.add(new THREE.LineSegments(ringGeo, new THREE.LineBasicMaterial({ color: col })));
 
-    // Vertical floor stalk dropping straight down to Z = 0 in world space
     const zHeight = obj.location[2] + obj.deltaLocation[2];
     const stalkGeo = new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(0, 0, 0),
@@ -1512,7 +2139,6 @@ export class ModixEngine {
     mesh: EditableMeshData,
     parentGroup: THREE.Group
   ): void {
-    // Highlight selected faces in translucent Blender orange
     if (this.state.selectedFaces.length > 0) {
       const selPos: number[] = [];
       for (const fIdx of this.state.selectedFaces) {
@@ -1542,7 +2168,6 @@ export class ModixEngine {
       }
     }
 
-    // Vertex dots (black unselected, orange selected)
     if (this.state.editSelectMode === 'VERTEX') {
       const unselPos: number[] = [];
       const selPos: number[] = [];
@@ -1583,29 +2208,21 @@ export class ModixEngine {
 
   private rebuildAnnotationsAndMeasures(): void {
     this.annotationsGroup.clear();
-    // Grease pencil annotations
     for (const stroke of this.state.annotations) {
       if (stroke.points.length < 2) continue;
       const pts = stroke.points.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
       const geo = new THREE.BufferGeometry().setFromPoints(pts);
       this.annotationsGroup.add(
-        new THREE.Line(
-          geo,
-          new THREE.LineBasicMaterial({ color: 0x62d8ff, depthTest: false })
-        )
+        new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0x62d8ff, depthTest: false }))
       );
     }
 
-    // 3D Measure segments
     for (const seg of this.state.measures) {
       const a = new THREE.Vector3(...seg.start);
       const b = new THREE.Vector3(...seg.end);
       const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
       this.annotationsGroup.add(
-        new THREE.Line(
-          geo,
-          new THREE.LineBasicMaterial({ color: 0xffd24c, depthTest: false })
-        )
+        new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffd24c, depthTest: false }))
       );
       const dist = a.distanceTo(b);
       if (dist > 0.01) {
@@ -1638,7 +2255,6 @@ export class ModixEngine {
     return sp;
   }
 
-  /** Builds interactive 3D Move / Rotate / Scale / Transform Gizmos on active object or selection */
   public rebuildGizmo(): void {
     if (!this.gizmoGroup) return;
     this.gizmoGroup.clear();
@@ -1690,7 +2306,6 @@ export class ModixEngine {
         cone.userData = { gizmoAxis: axis };
         this.gizmoGroup.add(cone);
 
-        // Touch-friendly invisible hit cylinder
         const hit = new THREE.Mesh(
           new THREE.CylinderGeometry(0.16, 0.16, 1.2, 8),
           new THREE.MeshBasicMaterial({ visible: false })
@@ -1746,7 +2361,6 @@ export class ModixEngine {
       }
     }
 
-    // Center white handle (free XY/screen move or uniform scale)
     const centerRing = new THREE.Mesh(
       new THREE.TorusGeometry(0.18, 0.02, 8, 24),
       new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false })
@@ -1832,11 +2446,11 @@ export class ModixEngine {
         this.lastTwoMid = { x: (pts[0].x + pts[1].x) * 0.5, y: (pts[0].y + pts[1].y) * 0.5 };
         this.draggingGizmoAxis = null;
         this.isSculptingStroke = false;
+        this.lastPaintUV = null;
         return;
       }
 
       if (this.activePointers.size === 1 && e.button !== 1 && e.button !== 2) {
-        // 1. Check Gizmo hit first
         const gizmoHit = this.raycastGizmo(e.clientX, e.clientY);
         if (gizmoHit) {
           this.pushUndoSnapshot();
@@ -1854,16 +2468,19 @@ export class ModixEngine {
           return;
         }
 
-        // 2. Check Sculpt / Texture Paint stroke on active mesh
         if (this.state.mode === 'SCULPT' || this.state.mode === 'TEXTURE_PAINT') {
+          this.lastPaintUV = null;
+          this.paintedCanvasObjId = null;
+          this.pushUndoSnapshot();
           if (this.trySculptOrPaintAt(e.clientX, e.clientY, true)) {
-            this.pushUndoSnapshot();
             this.isSculptingStroke = true;
             return;
+          } else {
+            // Revert unused snapshot if stroke missed mesh
+            this.undoStack.pop();
           }
         }
 
-        // 3. Check Annotate or Measure tools
         if (this.state.activeTool === 'annotate') {
           const hitPt = this.raycastGroundOrSurface(e.clientX, e.clientY);
           if (hitPt) {
@@ -1894,13 +2511,10 @@ export class ModixEngine {
       const dy = e.clientY - prev.y;
       this.activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-      if (
-        Math.hypot(e.clientX - this.pointerDownPos.x, e.clientY - this.pointerDownPos.y) > 5
-      ) {
+      if (Math.hypot(e.clientX - this.pointerDownPos.x, e.clientY - this.pointerDownPos.y) > 5) {
         this.pointerMoved = true;
       }
 
-      // Two-finger pinch zoom + pan
       if (this.activePointers.size === 2) {
         const pts = [...this.activePointers.values()];
         const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
@@ -1914,7 +2528,6 @@ export class ModixEngine {
         return;
       }
 
-      // Single pointer interactions
       if (this.draggingGizmoAxis) {
         this.applyGizmoDrag(e.clientX, e.clientY);
         return;
@@ -1943,7 +2556,6 @@ export class ModixEngine {
         return;
       }
 
-      // Middle mouse or Shift+drag pans; otherwise single-finger drag orbits smoothly!
       if (e.buttons === 4 || e.shiftKey) {
         this.panByDelta(dx, dy);
       } else {
@@ -1966,7 +2578,19 @@ export class ModixEngine {
 
       if (this.isSculptingStroke) {
         this.isSculptingStroke = false;
+        this.lastPaintUV = null;
         this.grabBrushIndices = [];
+        // Commit 3D painted canvas texture back to object MaterialData for Undo & Export!
+        if (this.paintedCanvasObjId) {
+          const obj = this.state.objects.find((o) => o.id === this.paintedCanvasObjId);
+          const live = this.textureCanvases.get(this.paintedCanvasObjId);
+          if (obj && live) {
+            const url = live.canvas.toDataURL('image/png');
+            obj.material.textureDataUrl = url;
+            live.sourceUrl = url;
+          }
+          this.paintedCanvasObjId = null;
+        }
         this.notify();
         return;
       }
@@ -2024,7 +2648,6 @@ export class ModixEngine {
     const cam = this.getActiveCamera();
     cam.updateMatrixWorld();
 
-    // Project chosen world axis onto screen space to compute intuitive signed drag!
     const axisMap: Record<'X' | 'Y' | 'Z', THREE.Vector3> = {
       X: new THREE.Vector3(1, 0, 0),
       Y: new THREE.Vector3(0, 1, 0),
@@ -2047,7 +2670,6 @@ export class ModixEngine {
 
     const tool = this.state.activeTool;
 
-    // Edit Mode vertex/face transform
     if (this.state.mode === 'EDIT' && active.mesh) {
       const targetVerts = this.getSelectedVertexSet(active.mesh);
       const axesToMove: Array<0 | 1 | 2> =
@@ -2079,7 +2701,6 @@ export class ModixEngine {
       return;
     }
 
-    // Object Mode transform
     const idxMap: Record<'X' | 'Y' | 'Z', 0 | 1 | 2> = { X: 0, Y: 1, Z: 2 };
     const lockKeys: Record<'X' | 'Y' | 'Z', 'x' | 'y' | 'z'> = { X: 'x', Y: 'y', Z: 'z' };
 
@@ -2110,7 +2731,6 @@ export class ModixEngine {
         }
       }
     } else {
-      // Move or Transform
       let delta = signedUnits;
       if (this.state.snapEnabled) delta = Math.round(delta / 0.25) * 0.25;
       if (this.draggingGizmoAxis === 'XYZ') {
@@ -2156,7 +2776,6 @@ export class ModixEngine {
   }
 
   private handleViewportTap(clientX: number, clientY: number, additive: boolean): void {
-    // 1. Place 3D Cursor if Cursor tool active
     if (this.state.activeTool === 'cursor') {
       const pt = this.raycastGroundOrSurface(clientX, clientY);
       if (pt) {
@@ -2172,23 +2791,17 @@ export class ModixEngine {
       return;
     }
 
-    // 2. Add Cube tool on grid tap
     if (this.state.activeTool === 'add_cube' && this.state.mode === 'OBJECT') {
       const pt = this.raycastGroundOrSurface(clientX, clientY);
       if (pt) {
         const prevCursor = [...this.state.cursor3D] as [number, number, number];
-        this.state.cursor3D = [
-          Number(pt.x.toFixed(2)),
-          Number(pt.y.toFixed(2)),
-          1.0
-        ];
+        this.state.cursor3D = [Number(pt.x.toFixed(2)), Number(pt.y.toFixed(2)), 1.0];
         this.addPrimitive('cube');
         this.state.cursor3D = prevCursor;
       }
       return;
     }
 
-    // 3. Edit Mode Face / Vertex selection
     if (this.state.mode === 'EDIT') {
       const active = this.getActiveObject();
       const entry = active ? this.meshMap.get(active.id) : null;
@@ -2200,7 +2813,6 @@ export class ModixEngine {
           const polyFaceIdx = entry.triangleToFaceIndex[hits[0].faceIndex];
           if (polyFaceIdx !== undefined) {
             if (this.state.editSelectMode === 'VERTEX') {
-              // Pick nearest vertex of hit face
               const localHit = entry.root.worldToLocal(hits[0].point.clone());
               let bestV = active.mesh.faces[polyFaceIdx][0];
               let bestD = Infinity;
@@ -2228,7 +2840,6 @@ export class ModixEngine {
       return;
     }
 
-    // 4. Object Mode Raycast Selection
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(this.getNDC(clientX, clientY), this.getActiveCamera());
     const hits = raycaster.intersectObjects(this.objectsGroup.children, true);
@@ -2257,7 +2868,7 @@ export class ModixEngine {
     return raycaster.ray.intersectPlane(groundPlane, out);
   }
 
-  /** Real-time 3D Sculpting & Vertex Painting on touch strokes */
+  /** Real-time 3D Sculpting, Live 3D UV Texture Painting & Vertex Painting */
   private trySculptOrPaintAt(
     clientX: number,
     clientY: number,
@@ -2270,7 +2881,6 @@ export class ModixEngine {
     const entry = this.meshMap.get(active.id);
     if (!entry) return false;
 
-    // Auto-subdivide low-poly cube once when entering first sculpt stroke so sculpting feels rich!
     if (isStart && this.state.mode === 'SCULPT' && active.mesh.vertices.length < 30) {
       active.mesh = catmullClarkSubdivide(active.mesh, 2);
       active.mesh.shadeSmooth = true;
@@ -2281,7 +2891,12 @@ export class ModixEngine {
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(this.getNDC(clientX, clientY), this.getActiveCamera());
 
-    if (this.state.activeTool === 'sculpt_grab' && !isStart && this.grabBrushIndices.length > 0) {
+    if (
+      this.state.mode === 'SCULPT' &&
+      this.state.activeTool === 'sculpt_grab' &&
+      !isStart &&
+      this.grabBrushIndices.length > 0
+    ) {
       const cam = this.getActiveCamera();
       const right = new THREE.Vector3(1, 0, 0).applyQuaternion(cam.quaternion);
       const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion);
@@ -2304,16 +2919,73 @@ export class ModixEngine {
     const hits = raycaster.intersectObject(updatedEntry.surface, false);
     if (hits.length === 0) return false;
 
-    const hitLocal = updatedEntry.root.worldToLocal(hits[0].point.clone());
-    const hitNormal = hits[0].face
-      ? hits[0].face.normal.clone().normalize()
+    const hit = hits[0];
+    const hitLocal = updatedEntry.root.worldToLocal(hit.point.clone());
+    const hitNormal = hit.face
+      ? hit.face.normal.clone().normalize()
       : new THREE.Vector3(0, 0, 1);
 
     const radius = this.state.sculpt.radius;
     const strength = this.state.sculpt.strength;
 
-    // Texture / Vertex Paint mode
+    // 3D TEXTURE PAINT / VERTEX PAINT MODE
     if (this.state.mode === 'TEXTURE_PAINT') {
+      const paintTarget = this.state.sculpt.paintTarget ?? 'texture';
+
+      // A) Direct 60fps UV Canvas Texture Painting on the 3D surface!
+      if (paintTarget === 'texture' && hit.uv) {
+        const hadTexBefore = this.textureCanvases.has(active.id);
+        const live = this.getOrCreateLiveTexture(active, true);
+        if (!live) return false;
+        if (!hadTexBefore) {
+          if (active.material.baseColor === '#9a9a9a') active.material.baseColor = '#ffffff';
+          this.rebuildSceneObjects();
+        }
+
+        const repX = active.material.repeatX ?? 1;
+        const repY = active.material.repeatY ?? 1;
+        const u = (((hit.uv.x * repX) % 1) + 1) % 1;
+        const v = (((hit.uv.y * repY) % 1) + 1) % 1;
+
+        const w = live.canvas.width;
+        const h = live.canvas.height;
+        const px = u * w;
+        const py = (1 - v) * h;
+        const brushPx = Math.max(2, this.state.sculpt.paintBrushPx ?? Math.round(radius * 32));
+        const ctx = live.ctx;
+
+        ctx.save();
+        ctx.globalAlpha = Math.max(0.05, Math.min(1, this.state.sculpt.paintOpacity ?? strength));
+        ctx.fillStyle = this.state.sculpt.paintColor;
+        ctx.strokeStyle = this.state.sculpt.paintColor;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = brushPx * 2;
+
+        if (
+          this.lastPaintUV &&
+          this.lastPaintUV.objId === active.id &&
+          Math.hypot(u - this.lastPaintUV.u, v - this.lastPaintUV.v) < 0.22
+        ) {
+          ctx.beginPath();
+          ctx.moveTo(this.lastPaintUV.u * w, (1 - this.lastPaintUV.v) * h);
+          ctx.lineTo(px, py);
+          ctx.stroke();
+        } else {
+          ctx.beginPath();
+          ctx.arc(px, py, brushPx, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+
+        this.lastPaintUV = { objId: active.id, u, v };
+        this.paintedCanvasObjId = active.id;
+        live.texture.needsUpdate = true;
+        this.renderFrame();
+        return true;
+      }
+
+      // B) Per-vertex color painting fallback
       if (!active.mesh.vertexColors || active.mesh.vertexColors.length !== active.mesh.vertices.length) {
         active.mesh.vertexColors = active.mesh.vertices.map(() => [0.85, 0.85, 0.85]);
       }
@@ -2332,7 +3004,7 @@ export class ModixEngine {
       return true;
     }
 
-    // Sculpt brushes (with optional X/Y/Z symmetry!)
+    // SCULPT BRUSHES
     const symCenters: THREE.Vector3[] = [hitLocal.clone()];
     const symNormals: THREE.Vector3[] = [hitNormal.clone()];
     if (this.state.sculpt.symmetryX && Math.abs(hitLocal.x) > 0.02) {
@@ -2418,7 +3090,6 @@ export class ModixEngine {
     this.renderer.render(this.scene, this.getActiveCamera());
   }
 
-  /** Renders clean high-res snapshot without viewport overlays for Render Image! */
   public captureRenderDataURL(width = 1280, height = 720): string {
     const prevOverlays = this.overlaysGroup.visible;
     const prevGizmo = this.gizmoGroup.visible;
@@ -2435,7 +3106,6 @@ export class ModixEngine {
     this.renderer.render(this.scene, this.perspCamera);
     const dataUrl = this.renderer.domElement.toDataURL('image/png');
 
-    // Restore viewport state
     this.overlaysGroup.visible = prevOverlays;
     this.gizmoGroup.visible = prevGizmo;
     this.handleResize();
@@ -2448,26 +3118,73 @@ export class ModixEngine {
     for (const obj of this.state.objects) {
       if (obj.kind !== 'MESH' || !obj.mesh || !obj.visible) continue;
       const evaluated = evaluateMeshWithModifiers(obj.mesh, obj.modifiers);
-      const built = buildThreeGeometries(evaluated);
+      const built = buildThreeGeometries(
+        evaluated,
+        obj.material.uvProjection ?? 'box',
+        obj.material.repeatX ?? 1,
+        obj.material.repeatY ?? 1
+      );
+      const liveTex = this.getOrCreateLiveTexture(obj, false);
       const mesh = new THREE.Mesh(
         built.surfaceGeometry,
         new THREE.MeshStandardMaterial({
-          color: new THREE.Color(obj.material.baseColor),
+          color: new THREE.Color(
+            liveTex && obj.material.baseColor === '#9a9a9a' ? '#ffffff' : obj.material.baseColor
+          ),
+          map: liveTex ? liveTex.texture : null,
           metalness: obj.material.metallic,
-          roughness: obj.material.roughness
+          roughness: obj.material.roughness,
+          emissive: new THREE.Color(obj.material.emissionColor),
+          emissiveIntensity: obj.material.emissionStrength,
+          transparent: obj.material.opacity < 1,
+          opacity: obj.material.opacity
         })
       );
       mesh.name = obj.name;
-      mesh.position.set(...obj.location);
-      mesh.rotation.set(
-        THREE.MathUtils.degToRad(obj.rotationDeg[0]),
-        THREE.MathUtils.degToRad(obj.rotationDeg[1]),
-        THREE.MathUtils.degToRad(obj.rotationDeg[2])
+      mesh.position.set(
+        obj.location[0] + obj.deltaLocation[0],
+        obj.location[1] + obj.deltaLocation[1],
+        obj.location[2] + obj.deltaLocation[2]
       );
-      mesh.scale.set(...obj.scale);
+      mesh.rotation.set(
+        THREE.MathUtils.degToRad(obj.rotationDeg[0] + obj.deltaRotationDeg[0]),
+        THREE.MathUtils.degToRad(obj.rotationDeg[1] + obj.deltaRotationDeg[1]),
+        THREE.MathUtils.degToRad(obj.rotationDeg[2] + obj.deltaRotationDeg[2])
+      );
+      mesh.scale.set(
+        obj.scale[0] * obj.deltaScale[0],
+        obj.scale[1] * obj.deltaScale[1],
+        obj.scale[2] * obj.deltaScale[2]
+      );
       exportGroup.add(mesh);
     }
     return exportGroup;
+  }
+
+  public getSceneSummaryForAI(): string {
+    const summary = {
+      mode: this.state.mode,
+      shading: this.state.shading,
+      collections: this.state.collections.map((c) => c.name),
+      activeObject: this.getActiveObject()?.name || null,
+      selectedObjects: this.state.objects
+        .filter((o) => this.state.selectedIds.includes(o.id))
+        .map((o) => o.name),
+      objects: this.state.objects.map((o) => ({
+        name: o.name,
+        kind: o.kind,
+        group: o.collection,
+        location: o.location,
+        rotationDeg: o.rotationDeg,
+        scale: o.scale,
+        color: o.material.baseColor,
+        hasTexture: Boolean(o.material.textureDataUrl),
+        textureName: o.material.textureName || null,
+        verts: o.mesh?.vertices.length ?? 0,
+        faces: o.mesh?.faces.length ?? 0
+      }))
+    };
+    return JSON.stringify(summary);
   }
 
   public getPolyStats(): { verts: number; faces: number; tris: number } {
@@ -2485,6 +3202,9 @@ export class ModixEngine {
   public destroy(): void {
     cancelAnimationFrame(this.rafId);
     this.resizeObserver?.disconnect();
+    for (const entry of this.textureCanvases.values()) {
+      entry.texture.dispose();
+    }
     this.renderer?.dispose();
   }
 }

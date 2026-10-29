@@ -1,17 +1,35 @@
-import { Icons } from '../icons/blenderIcons';
-import type { ModixEngine } from '../engine/ModixEngine';
+import { saveDataUrlPNG } from '../engine/Exporters';
 import { evaluateMeshWithModifiers } from '../engine/MeshOperations';
-import type { ModifierType, PropertiesTabId, RotationMode, SceneObjectData } from '../types/scene';
-import { openDropdownMenu, showToast } from './Modals';
+import type { ModixEngine } from '../engine/ModixEngine';
+import {
+  generateProceduralTextureDataUrl,
+  type ProceduralTexturePreset
+} from '../engine/TextureGenerator';
+import { Icons } from '../icons/blenderIcons';
+import type {
+  ModifierType,
+  PropertiesTabId,
+  RotationMode,
+  SceneObjectData,
+  UVProjectionMode
+} from '../types/scene';
+import {
+  openDropdownMenu,
+  openSliceMeshModal,
+  openTextPromptModal,
+  showToast,
+  type ExportFormatChoice
+} from './Modals';
+import { openTextureStudioModal } from './TexturePaintModal';
 
 const PROP_TABS: Array<{ id: PropertiesTabId; icon: string; title: string }> = [
   { id: 'tool', icon: Icons.propTool, title: 'Active Tool and Workspace' },
   { id: 'render', icon: Icons.propRender, title: 'Render Properties' },
-  { id: 'output', icon: Icons.propOutput, title: 'Output & Export' },
+  { id: 'output', icon: Icons.propOutput, title: 'Output & Export (Roblox .OBJ / .GLB)' },
   { id: 'view_layer', icon: Icons.propViewLayer, title: 'View Layer Properties' },
   { id: 'scene', icon: Icons.propScene, title: 'Scene Properties' },
   { id: 'world', icon: Icons.propWorld, title: 'World Properties' },
-  { id: 'collection', icon: Icons.propCollection, title: 'Collection Properties' },
+  { id: 'collection', icon: Icons.propCollection, title: 'Groups & Collections' },
   { id: 'object', icon: Icons.propObject, title: 'Object Properties' },
   { id: 'modifiers', icon: Icons.propModifiers, title: 'Modifier Properties' },
   { id: 'particles', icon: Icons.propParticles, title: 'Particle Properties' },
@@ -19,7 +37,7 @@ const PROP_TABS: Array<{ id: PropertiesTabId; icon: string; title: string }> = [
   { id: 'constraints', icon: Icons.propConstraints, title: 'Object Constraints' },
   { id: 'data', icon: Icons.propData, title: 'Object Data (Mesh / Light / Camera)' },
   { id: 'material', icon: Icons.propMaterial, title: 'Material Properties' },
-  { id: 'texture', icon: Icons.propTexture, title: 'Texture Properties' }
+  { id: 'texture', icon: Icons.propTexture, title: 'Texture Studio & Paint' }
 ];
 
 export class PropertiesPanel {
@@ -28,21 +46,25 @@ export class PropertiesPanel {
   private tabStripEl!: HTMLElement;
   private inspectorEl!: HTMLElement;
   private onRenderRequest: () => void;
-  private onExportRequest: (fmt: 'obj' | 'stl' | 'glb' | 'modix') => void;
+  private onExportRequest: (fmt: ExportFormatChoice) => void;
+  private onOpenExportHub: () => void;
   private isEditingInlineInput = false;
+  private quickOpsExpanded = false;
 
   constructor(
     engine: ModixEngine,
     rootEl: HTMLElement,
     callbacks: {
       onRenderRequest: () => void;
-      onExportRequest: (fmt: 'obj' | 'stl' | 'glb' | 'modix') => void;
+      onExportRequest: (fmt: ExportFormatChoice) => void;
+      onOpenExportHub: () => void;
     }
   ) {
     this.engine = engine;
     this.rootEl = rootEl;
     this.onRenderRequest = callbacks.onRenderRequest;
     this.onExportRequest = callbacks.onExportRequest;
+    this.onOpenExportHub = callbacks.onOpenExportHub;
     this.build();
   }
 
@@ -97,7 +119,6 @@ export class PropertiesPanel {
   public sync(): void {
     if (this.isEditingInlineInput) return;
 
-    // Update active state on tab strip
     this.tabStripEl.querySelectorAll<HTMLElement>('.prop-tab-btn').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.tab === this.engine.state.activePropertiesTab);
     });
@@ -113,6 +134,10 @@ export class PropertiesPanel {
       this.renderModifiersTab(active);
     } else if (tab === 'material') {
       this.renderMaterialTab(active);
+    } else if (tab === 'texture') {
+      this.renderTextureTab(active);
+    } else if (tab === 'collection') {
+      this.renderCollectionTab(active);
     } else if (tab === 'data') {
       this.renderDataTab(active);
     } else if (tab === 'render' || tab === 'output') {
@@ -164,7 +189,6 @@ export class PropertiesPanel {
     scrub.className = 'xf-scrub-box';
     scrub.textContent = opts.formatter(opts.value);
 
-    // Drag scrub + tap-to-type
     let dragging = false;
     let moved = false;
     let startX = 0;
@@ -195,7 +219,6 @@ export class PropertiesPanel {
       if (!dragging) return;
       dragging = false;
       if (!moved && !opts.locked) {
-        // Inline numeric input
         this.isEditingInlineInput = true;
         scrub.innerHTML = `<input type="number" step="${opts.step}" value="${opts.value}" />`;
         const inp = scrub.querySelector('input')!;
@@ -241,27 +264,27 @@ export class PropertiesPanel {
 
   private renderObjectTab(active: SceneObjectData | null): void {
     if (!active) {
-      this.inspectorEl.innerHTML = `<div style="color:#888;padding:10px 4px;">No active object selected.</div>`;
+      this.inspectorEl.innerHTML = `<div style="color:#888;padding:10px 4px;">Nenhum objeto ativo selecionado.</div>`;
       return;
     }
 
-    // 1. Breadcrumb ("Cube" + pin icon)
+    // 1. Breadcrumb
     const bc = document.createElement('div');
     bc.className = 'props-breadcrumb';
     bc.innerHTML = `
-      <div class="props-breadcrumb-left">${Icons.cubeSmall}<span>${active.name}</span></div>
+      <div class="props-breadcrumb-left">${Icons.cubeSmall}<span>${escapeHtml(active.name)}</span></div>
       <span style="color:#aaa;">${Icons.pin}</span>
     `;
     this.inspectorEl.appendChild(bc);
 
-    // 2. Object Name Input Row
+    // 2. Object Name Input Row (Renomear direto)
     const nameRow = document.createElement('div');
     nameRow.className = 'props-name-row';
     nameRow.innerHTML = `
       <span style="display:inline-flex;align-items:center;gap:2px;color:#ccc;">
         ${Icons.modeObject}${Icons.chevronDown}
       </span>
-      <input type="text" class="props-name-input" value="${active.name}" aria-label="Object Name" />
+      <input type="text" class="props-name-input" value="${escapeHtml(active.name)}" aria-label="Object Name" />
     `;
     const nameInp = nameRow.querySelector<HTMLInputElement>('input')!;
     nameInp.addEventListener('focus', () => {
@@ -270,15 +293,18 @@ export class PropertiesPanel {
     nameInp.addEventListener('blur', () => {
       this.isEditingInlineInput = false;
       const trimmed = nameInp.value.trim();
-      if (trimmed) active.name = trimmed;
-      this.engine.notify();
+      if (trimmed && trimmed !== active.name) {
+        this.engine.renameObject(active.id, trimmed);
+      } else {
+        this.engine.notify();
+      }
     });
     nameInp.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') nameInp.blur();
     });
     this.inspectorEl.appendChild(nameRow);
 
-    // 3. Transform Section (open by default — identical to screenshot!)
+    // 3. Transform Section
     const tfSec = document.createElement('div');
     tfSec.className = 'props-section';
     const tfHdr = document.createElement('div');
@@ -290,7 +316,6 @@ export class PropertiesPanel {
     const curFrame = this.engine.state.currentFrame;
     const kfAtCur = active.keyframes.find((k) => k.frame === curFrame);
 
-    // Location X / Y / Z
     const locGroup = document.createElement('div');
     locGroup.className = 'xf-group';
     const axes: Array<{ idx: 0 | 1 | 2; key: 'x' | 'y' | 'z'; name: string }> = [
@@ -323,7 +348,6 @@ export class PropertiesPanel {
     }
     tfContent.appendChild(locGroup);
 
-    // Rotation X / Y / Z
     const rotGroup = document.createElement('div');
     rotGroup.className = 'xf-group';
     for (const ax of axes) {
@@ -350,7 +374,6 @@ export class PropertiesPanel {
       );
     }
 
-    // Rotation Mode row ("Mode  [ XYZ Euler v ]  •")
     const modeRow = document.createElement('div');
     modeRow.className = 'xf-row';
     modeRow.style.marginTop = '4px';
@@ -369,7 +392,6 @@ export class PropertiesPanel {
     rotGroup.appendChild(modeRow);
     tfContent.appendChild(rotGroup);
 
-    // Scale X / Y / Z
     const sclGroup = document.createElement('div');
     sclGroup.className = 'xf-group';
     sclGroup.style.marginBottom = '0';
@@ -401,7 +423,7 @@ export class PropertiesPanel {
     tfSec.append(tfHdr, tfContent);
     this.inspectorEl.appendChild(tfSec);
 
-    // 4. Collapsible "> Delta Transform" (closed by default just like screenshot!)
+    // 4. Collapsible "> Delta Transform"
     const deltaSec = document.createElement('div');
     deltaSec.className = 'props-section';
     const expanded = this.engine.state.deltaTransformExpanded;
@@ -439,6 +461,306 @@ export class PropertiesPanel {
       deltaSec.appendChild(dBody);
     }
     this.inspectorEl.appendChild(deltaSec);
+
+    // 5. Collapsible "> Ações de Objeto & Grupo" (Copiar, Colar, Recortar, Unir, Grupo, Deletar)
+    const opsSec = document.createElement('div');
+    opsSec.className = 'props-section';
+    const opsHdr = document.createElement('button');
+    opsHdr.type = 'button';
+    opsHdr.className = 'props-sec-hdr';
+    opsHdr.innerHTML = `${this.quickOpsExpanded ? Icons.chevronDown : Icons.chevronRight}<span>Ações &amp; Grupos (${escapeHtml(active.collection)})</span>`;
+    opsHdr.addEventListener('click', () => {
+      this.quickOpsExpanded = !this.quickOpsExpanded;
+      this.sync();
+    });
+    opsSec.appendChild(opsHdr);
+
+    if (this.quickOpsExpanded) {
+      const opsBody = document.createElement('div');
+      opsBody.className = 'props-sec-content';
+      opsBody.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+          <button type="button" class="modix-btn" data-q="copy">📋 Copiar</button>
+          <button type="button" class="modix-btn" data-q="paste">📥 Colar</button>
+          <button type="button" class="modix-btn" data-q="cut">✂ Recortar (Clip)</button>
+          <button type="button" class="modix-btn" data-q="slice">🔪 Fatiar 3D</button>
+          <button type="button" class="modix-btn" data-q="join">🔗 Unir (${this.engine.state.selectedIds.length})</button>
+          <button type="button" class="modix-btn" data-q="group">📁 Novo Grupo</button>
+          <button type="button" class="modix-btn" data-q="tex">🎨 Textura 2D</button>
+          <button type="button" class="modix-btn danger" data-q="del">🗑 Deletar</button>
+        </div>
+      `;
+      opsBody.querySelector('[data-q="copy"]')?.addEventListener('click', () => {
+        const n = this.engine.copySelected();
+        showToast(`${n} objeto(s) copiado(s)`);
+      });
+      opsBody.querySelector('[data-q="paste"]')?.addEventListener('click', () => {
+        const p = this.engine.pasteClipboard();
+        showToast(p.length ? `${p.length} objeto(s) colado(s)` : 'Área de transferência vazia');
+      });
+      opsBody.querySelector('[data-q="cut"]')?.addEventListener('click', () => {
+        const n = this.engine.cutSelected();
+        showToast(`${n} objeto(s) recortado(s)`);
+      });
+      opsBody.querySelector('[data-q="slice"]')?.addEventListener('click', () => {
+        openSliceMeshModal(active.name, (axis, mode, off) => {
+          this.engine.sliceActiveMesh(axis, mode, off);
+          showToast(`Malha "${active.name}" recortada no eixo ${axis}!`);
+        });
+      });
+      opsBody.querySelector('[data-q="join"]')?.addEventListener('click', () => {
+        const res = this.engine.joinSelected();
+        showToast(res ? `Malhas unidas em "${res.name}"` : 'Selecione 2+ objetos Mesh (Shift+Toque) para unir');
+      });
+      opsBody.querySelector('[data-q="group"]')?.addEventListener('click', () => {
+        openTextPromptModal({
+          title: 'Colocar Selecionados em Grupo',
+          label: 'Nome do Grupo / Coleção:',
+          initialValue: 'Grupo_1',
+          confirmLabel: 'Criar Grupo',
+          onConfirm: (val) => {
+            this.engine.groupSelectedIntoNewCollection(val);
+            showToast(`Agrupado em "${val}"`);
+          }
+        });
+      });
+      opsBody.querySelector('[data-q="tex"]')?.addEventListener('click', () => {
+        openTextureStudioModal(this.engine, showToast);
+      });
+      opsBody.querySelector('[data-q="del"]')?.addEventListener('click', () => {
+        this.engine.deleteSelected();
+        showToast('Objeto removido');
+      });
+      opsSec.appendChild(opsBody);
+    }
+    this.inspectorEl.appendChild(opsSec);
+  }
+
+  private renderCollectionTab(active: SceneObjectData | null): void {
+    const st = this.engine.state;
+    const wrap = document.createElement('div');
+    wrap.className = 'props-section';
+    wrap.innerHTML = `
+      <div class="props-sec-hdr">${Icons.chevronDown}<span>Grupos &amp; Coleções (${st.collections.length})</span></div>
+      <div class="props-sec-content" style="display:flex;flex-direction:column;gap:6px;">
+        <button type="button" class="modix-btn primary" id="col-new-btn">+ Criar Novo Grupo</button>
+        ${
+          active
+            ? `<div style="display:flex;flex-direction:column;gap:4px;margin-top:2px;">
+                <span style="color:#aaa;font-size:10.5px;">Mover selecionado(s) para grupo:</span>
+                <select id="col-move-sel" class="xf-select">
+                  ${st.collections
+                    .map(
+                      (c) =>
+                        `<option value="${escapeHtml(c.name)}" ${active.collection === c.name ? 'selected' : ''}>${escapeHtml(c.name)}</option>`
+                    )
+                    .join('')}
+                </select>
+                <button type="button" class="modix-btn" id="col-ungroup-btn">Tirar do Grupo (Voltar p/ Collection)</button>
+               </div>`
+            : ''
+        }
+        <div class="menu-sep"></div>
+        <div style="display:flex;flex-direction:column;gap:4px;" id="col-list-box"></div>
+      </div>
+    `;
+
+    const listBox = wrap.querySelector('#col-list-box')!;
+    for (const col of st.collections) {
+      const count = st.objects.filter((o) => o.collection === col.name).length;
+      const item = document.createElement('div');
+      item.style.cssText =
+        'display:flex;align-items:center;justify-content:space-between;background:#1d1d1d;padding:4px 6px;border-radius:4px;gap:4px;';
+      item.innerHTML = `
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📁 <b>${escapeHtml(col.name)}</b> (${count})</span>
+        <span style="display:flex;gap:3px;">
+          <button type="button" class="modix-btn" data-ren style="height:19px;padding:0 5px;font-size:10px;" title="Renomear Grupo">✎</button>
+          ${
+            st.collections.length > 1
+              ? `<button type="button" class="modix-btn danger" data-del style="height:19px;padding:0 5px;font-size:10px;" title="Excluir Grupo">✕</button>`
+              : ''
+          }
+        </span>
+      `;
+      item.querySelector('[data-ren]')?.addEventListener('click', () => {
+        openTextPromptModal({
+          title: 'Renomear Grupo',
+          label: 'Novo nome do grupo:',
+          initialValue: col.name,
+          onConfirm: (nextName) => {
+            this.engine.renameCollection(col.name, nextName);
+            showToast(`Grupo renomeado para "${nextName}"`);
+          }
+        });
+      });
+      item.querySelector('[data-del]')?.addEventListener('click', () => {
+        this.engine.deleteCollection(col.name, false);
+        showToast(`Grupo "${col.name}" removido (objetos mantidos)`);
+      });
+      listBox.appendChild(item);
+    }
+
+    wrap.querySelector('#col-new-btn')?.addEventListener('click', () => {
+      openTextPromptModal({
+        title: 'Novo Grupo / Coleção',
+        label: 'Nome do novo grupo:',
+        initialValue: `Grupo_${st.collections.length}`,
+        confirmLabel: 'Criar & Agrupar Seleção',
+        onConfirm: (val) => {
+          if (st.selectedIds.length > 0) {
+            this.engine.groupSelectedIntoNewCollection(val);
+          } else {
+            this.engine.createCollection(val);
+          }
+          showToast(`Grupo "${val}" criado!`);
+        }
+      });
+    });
+
+    wrap.querySelector<HTMLSelectElement>('#col-move-sel')?.addEventListener('change', (e) => {
+      const target = (e.target as HTMLSelectElement).value;
+      this.engine.moveObjectsToCollection(st.selectedIds, target);
+      showToast(`Movido para "${target}"`);
+    });
+
+    wrap.querySelector('#col-ungroup-btn')?.addEventListener('click', () => {
+      this.engine.ungroupSelected();
+      showToast('Removido do grupo secundário');
+    });
+
+    this.inspectorEl.appendChild(wrap);
+  }
+
+  private renderTextureTab(active: SceneObjectData | null): void {
+    if (!active || active.kind !== 'MESH') {
+      this.inspectorEl.innerHTML = `<div style="color:#888;padding:8px;">Selecione um objeto Mesh 3D para aplicar, desenhar ou pintar texturas.</div>`;
+      return;
+    }
+
+    const m = active.material;
+    const wrap = document.createElement('div');
+    wrap.className = 'props-section';
+    wrap.innerHTML = `
+      <div class="props-sec-hdr">${Icons.chevronDown}<span>Texturas 2D &amp; Pintura 3D — ${escapeHtml(active.name)}</span></div>
+      <div class="props-sec-content" style="display:flex;flex-direction:column;gap:7px;">
+        ${
+          m.textureDataUrl
+            ? `<div style="display:flex;gap:8px;align-items:center;background:#161616;padding:6px;border-radius:4px;border:1px solid #2e2e2e;">
+                <img src="${m.textureDataUrl}" alt="Tex" style="width:52px;height:52px;border-radius:3px;object-fit:cover;border:1px solid #444;" />
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:600;color:#e5e7eb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.textureName || 'Texture_512.png')}</div>
+                  <div style="font-size:10px;color:#9ca3af;">UV: ${m.uvProjection || 'box'} (${m.repeatX ?? 1}×${m.repeatY ?? 1})</div>
+                </div>
+               </div>`
+            : `<div style="color:#9ca3af;font-size:10.5px;">Nenhuma textura aplicada ainda. Crie, importe ou desenhe abaixo!</div>`
+        }
+
+        <button type="button" class="modix-btn primary" id="btn-open-tex-studio">🎨 Desenhar / Editar Textura 2D</button>
+        <button type="button" class="modix-btn" id="btn-paint-3d">🖌 Pintar Direto no Modelo 3D</button>
+        <button type="button" class="modix-btn" id="btn-import-tex">📂 Importar Imagem (.PNG / .JPG / .SVG)</button>
+
+        <div class="menu-sep"></div>
+        <div style="font-size:10.5px;color:#bdbdbd;">Texturas Procedurais Instantâneas:</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+          <button type="button" class="modix-btn" data-p="studs">Roblox Studs</button>
+          <button type="button" class="modix-btn" data-p="brick">Tijolos</button>
+          <button type="button" class="modix-btn" data-p="wood">Madeira</button>
+          <button type="button" class="modix-btn" data-p="metal">Metal</button>
+          <button type="button" class="modix-btn" data-p="scifi">Sci-Fi Neon</button>
+          <button type="button" class="modix-btn" data-p="grass">Grama</button>
+          <button type="button" class="modix-btn" data-p="stone">Pedra</button>
+          <button type="button" class="modix-btn" data-p="lava">Lava</button>
+          <button type="button" class="modix-btn" data-p="marble">Mármore</button>
+          <button type="button" class="modix-btn" data-p="checker">Grade UV</button>
+        </div>
+
+        <label style="display:flex;justify-content:space-between;align-items:center;margin-top:2px;">
+          <span>Projeção UV</span>
+          <select id="prop-uv-proj" class="xf-select" style="width:110px;">
+            <option value="box" ${(m.uvProjection || 'box') === 'box' ? 'selected' : ''}>Smart Box</option>
+            <option value="planar" ${m.uvProjection === 'planar' ? 'selected' : ''}>Planar</option>
+            <option value="cylindrical" ${m.uvProjection === 'cylindrical' ? 'selected' : ''}>Cilíndrica</option>
+            <option value="spherical" ${m.uvProjection === 'spherical' ? 'selected' : ''}>Esférica</option>
+          </select>
+        </label>
+
+        ${
+          m.textureDataUrl
+            ? `<div style="display:flex;gap:5px;">
+                <button type="button" class="modix-btn" id="btn-dl-tex" style="flex:1;">⬇ PNG Roblox</button>
+                <button type="button" class="modix-btn danger" id="btn-rm-tex">Remover</button>
+               </div>`
+            : ''
+        }
+      </div>
+    `;
+
+    wrap.querySelector('#btn-open-tex-studio')?.addEventListener('click', () => {
+      openTextureStudioModal(this.engine, showToast);
+    });
+
+    wrap.querySelector('#btn-paint-3d')?.addEventListener('click', () => {
+      this.engine.state.mode = 'TEXTURE_PAINT';
+      this.engine.state.sculpt.paintTarget = 'texture';
+      this.engine.rebuildSceneObjects();
+      this.engine.notify();
+      showToast('Arraste o dedo sobre o objeto 3D para pintar sua textura UV!');
+    });
+
+    wrap.querySelector('#btn-import-tex')?.addEventListener('click', () => {
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = 'image/*,.svg';
+      inp.onchange = () => {
+        const f = inp.files?.[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            const c = document.createElement('canvas');
+            c.width = 512;
+            c.height = 512;
+            c.getContext('2d')!.drawImage(img, 0, 0, 512, 512);
+            this.engine.applyTextureDataUrl(active.id, c.toDataURL('image/png'), f.name);
+            showToast(`Textura "${f.name}" aplicada!`);
+          };
+          img.src = String(reader.result);
+        };
+        reader.readAsDataURL(f);
+      };
+      inp.click();
+    });
+
+    wrap.querySelectorAll<HTMLButtonElement>('[data-p]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const preset = b.dataset.p as ProceduralTexturePreset;
+        const url = generateProceduralTextureDataUrl({ preset, size: 512 });
+        this.engine.applyTextureDataUrl(active.id, url, `${preset}_512.png`);
+        showToast(`Textura ${b.textContent} aplicada!`);
+      });
+    });
+
+    wrap.querySelector<HTMLSelectElement>('#prop-uv-proj')?.addEventListener('change', (e) => {
+      m.uvProjection = (e.target as HTMLSelectElement).value as UVProjectionMode;
+      this.engine.rebuildSceneObjects();
+      this.engine.notify();
+    });
+
+    wrap.querySelector('#btn-dl-tex')?.addEventListener('click', () => {
+      if (m.textureDataUrl) {
+        void saveDataUrlPNG(`${active.name}_Texture.png`, m.textureDataUrl).then((msg) =>
+          showToast(msg)
+        );
+      }
+    });
+
+    wrap.querySelector('#btn-rm-tex')?.addEventListener('click', () => {
+      this.engine.applyTextureDataUrl(active.id, undefined);
+      showToast('Textura removida');
+    });
+
+    this.inspectorEl.appendChild(wrap);
   }
 
   private renderModifiersTab(active: SceneObjectData | null): void {
@@ -505,7 +827,7 @@ export class PropertiesPanel {
         <div class="props-sec-hdr" style="justify-content:space-between;">
           <span style="display:flex;align-items:center;gap:5px;">
             <input type="checkbox" ${mod.enabled ? 'checked' : ''} data-toggle />
-            <strong>${mod.name}</strong>
+            <strong>${escapeHtml(mod.name)}</strong>
           </span>
           <span style="display:flex;gap:4px;">
             <button type="button" class="modix-btn" data-apply style="height:18px;padding:0 5px;font-size:10px;">Apply</button>
@@ -633,7 +955,7 @@ export class PropertiesPanel {
     const wrap = document.createElement('div');
     wrap.className = 'props-section';
     wrap.innerHTML = `
-      <div class="props-sec-hdr">${Icons.chevronDown}<span>Principled BSDF — ${m.name}</span></div>
+      <div class="props-sec-hdr">${Icons.chevronDown}<span>Principled BSDF — ${escapeHtml(m.name)}</span></div>
       <div class="props-sec-content" style="display:flex;flex-direction:column;gap:8px;">
         <label style="display:flex;justify-content:space-between;align-items:center;">
           <span>Base Color</span>
@@ -659,52 +981,44 @@ export class PropertiesPanel {
           <span>Alpha / Opacity (${m.opacity.toFixed(2)})</span>
           <input type="range" min="0.1" max="1" step="0.05" value="${m.opacity}" data-mat="alpha" style="width:95px;" />
         </label>
-        <button type="button" class="modix-btn primary" data-mat="preview">Switch Viewport to Material Preview</button>
+        <button type="button" class="modix-btn primary" data-mat="texstudio">🎨 Estúdio de Texturas 2D / 3D</button>
+        <button type="button" class="modix-btn" data-mat="preview">Ativar Material Preview</button>
       </div>
     `;
 
-    const ensureVisibleShading = () => {
-      if (this.engine.state.shading === 'SOLID' || this.engine.state.shading === 'WIREFRAME') {
-        this.engine.state.shading = 'MATERIAL';
-      }
-    };
-
     wrap.querySelector('[data-mat="color"]')?.addEventListener('input', (e) => {
       m.baseColor = (e.target as HTMLInputElement).value;
-      ensureVisibleShading();
       this.engine.rebuildSceneObjects();
       this.engine.notify();
     });
     wrap.querySelector('[data-mat="metal"]')?.addEventListener('input', (e) => {
       m.metallic = parseFloat((e.target as HTMLInputElement).value);
-      ensureVisibleShading();
       this.engine.rebuildSceneObjects();
       this.engine.notify();
     });
     wrap.querySelector('[data-mat="rough"]')?.addEventListener('input', (e) => {
       m.roughness = parseFloat((e.target as HTMLInputElement).value);
-      ensureVisibleShading();
       this.engine.rebuildSceneObjects();
       this.engine.notify();
     });
     wrap.querySelector('[data-mat="emcol"]')?.addEventListener('input', (e) => {
       m.emissionColor = (e.target as HTMLInputElement).value;
       if (m.emissionStrength === 0) m.emissionStrength = 1;
-      ensureVisibleShading();
       this.engine.rebuildSceneObjects();
       this.engine.notify();
     });
     wrap.querySelector('[data-mat="emstr"]')?.addEventListener('input', (e) => {
       m.emissionStrength = parseFloat((e.target as HTMLInputElement).value);
-      ensureVisibleShading();
       this.engine.rebuildSceneObjects();
       this.engine.notify();
     });
     wrap.querySelector('[data-mat="alpha"]')?.addEventListener('input', (e) => {
       m.opacity = parseFloat((e.target as HTMLInputElement).value);
-      ensureVisibleShading();
       this.engine.rebuildSceneObjects();
       this.engine.notify();
+    });
+    wrap.querySelector('[data-mat="texstudio"]')?.addEventListener('click', () => {
+      openTextureStudioModal(this.engine, showToast);
     });
     wrap.querySelector('[data-mat="preview"]')?.addEventListener('click', () => {
       this.engine.state.shading = 'MATERIAL';
@@ -723,7 +1037,7 @@ export class PropertiesPanel {
       const wrap = document.createElement('div');
       wrap.className = 'props-section';
       wrap.innerHTML = `
-        <div class="props-sec-hdr">${Icons.chevronDown}<span>Mesh Topology &amp; Modeling</span></div>
+        <div class="props-sec-hdr">${Icons.chevronDown}<span>Mesh Topology &amp; Cutting</span></div>
         <div class="props-sec-content" style="display:flex;flex-direction:column;gap:6px;">
           <div style="color:#bbb;">Base Verts: <strong>${active.mesh.vertices.length}</strong> | Polygons: <strong>${active.mesh.faces.length}</strong></div>
           <div style="color:#999;font-size:10.5px;">Scene Evaluated Triangles: ${stats.tris}</div>
@@ -736,6 +1050,12 @@ export class PropertiesPanel {
             <button type="button" class="modix-btn" data-op="loop_cut">Loop Cut</button>
             <button type="button" class="modix-btn" data-op="shade_smooth">Shade Smooth</button>
             <button type="button" class="modix-btn" data-op="shade_flat">Shade Flat</button>
+          </div>
+          <div class="menu-sep"></div>
+          <button type="button" class="modix-btn primary" id="mesh-slice-btn">✂ Recortar / Fatiar Malha 3D</button>
+          <div style="display:flex;gap:4px;">
+            <button type="button" class="modix-btn" id="mesh-join-btn" style="flex:1;">🔗 Unir Selecionados</button>
+            <button type="button" class="modix-btn" id="mesh-sep-btn" style="flex:1;">Separar Partes</button>
           </div>
         </div>
       `;
@@ -753,6 +1073,20 @@ export class PropertiesPanel {
           this.engine.performEditMeshOp(op);
           showToast(`Mesh: ${b.textContent}`);
         });
+      });
+      wrap.querySelector('#mesh-slice-btn')?.addEventListener('click', () => {
+        openSliceMeshModal(active.name, (axis, mode, off) => {
+          this.engine.sliceActiveMesh(axis, mode, off);
+          showToast(`Malha recortada no eixo ${axis}!`);
+        });
+      });
+      wrap.querySelector('#mesh-join-btn')?.addEventListener('click', () => {
+        const res = this.engine.joinSelected();
+        showToast(res ? `Unido em "${res.name}"` : 'Selecione 2+ malhas primeiro');
+      });
+      wrap.querySelector('#mesh-sep-btn')?.addEventListener('click', () => {
+        const parts = this.engine.separateSelectedByLooseParts();
+        showToast(parts.length > 1 ? `Separado em ${parts.length} objetos` : 'A malha já é uma peça única');
       });
       this.inspectorEl.appendChild(wrap);
     } else if (active.kind === 'LIGHT') {
@@ -807,20 +1141,23 @@ export class PropertiesPanel {
     const wrap = document.createElement('div');
     wrap.className = 'props-section';
     wrap.innerHTML = `
-      <div class="props-sec-hdr">${Icons.chevronDown}<span>Render &amp; Mobile Export</span></div>
+      <div class="props-sec-hdr">${Icons.chevronDown}<span>Render &amp; Roblox / 3D Export</span></div>
       <div class="props-sec-content" style="display:flex;flex-direction:column;gap:6px;">
-        <button type="button" class="modix-btn primary" data-act="render">Render Image (1280×720 PNG)</button>
+        <button type="button" class="modix-btn primary" data-act="hub">🚀 Central de Exportação (Roblox .OBJ, .GLB, .RBXMX...)</button>
+        <button type="button" class="modix-btn" data-exp="obj_roblox">🎮 Exportar Rápido .OBJ (Roblox Studio)</button>
+        <button type="button" class="modix-btn" data-exp="glb">📦 Exportar .GLB (Com Texturas)</button>
+        <button type="button" class="modix-btn" data-exp="rbxmx">🧱 Exportar .RBXMX (Roblox Parts)</button>
+        <button type="button" class="modix-btn" data-exp="stl">🖨 Exportar .STL (3D Print)</button>
+        <button type="button" class="modix-btn" data-exp="modix">💾 Salvar Projeto (.MODIX)</button>
         <div class="menu-sep"></div>
-        <button type="button" class="modix-btn" data-exp="obj">Export Wavefront (.OBJ)</button>
-        <button type="button" class="modix-btn" data-exp="stl">Export 3D Print (.STL)</button>
-        <button type="button" class="modix-btn" data-exp="glb">Export glTF Binary (.GLB)</button>
-        <button type="button" class="modix-btn" data-exp="modix">Save Modix Project (.MODIX)</button>
+        <button type="button" class="modix-btn" data-act="render">📸 Renderizar Imagem (1280×720 PNG)</button>
       </div>
     `;
+    wrap.querySelector('[data-act="hub"]')?.addEventListener('click', () => this.onOpenExportHub());
     wrap.querySelector('[data-act="render"]')?.addEventListener('click', () => this.onRenderRequest());
     wrap.querySelectorAll<HTMLButtonElement>('[data-exp]').forEach((b) => {
       b.addEventListener('click', () => {
-        this.onExportRequest(b.dataset.exp as 'obj' | 'stl' | 'glb' | 'modix');
+        this.onExportRequest(b.dataset.exp as ExportFormatChoice);
       });
     });
     this.inspectorEl.appendChild(wrap);
@@ -891,12 +1228,19 @@ export class PropertiesPanel {
     wrap.innerHTML = `
       <div class="props-sec-hdr">${Icons.chevronDown}<span style="text-transform:capitalize;">${tab.replace('_', ' ')} Properties</span></div>
       <div class="props-sec-content" style="display:flex;flex-direction:column;gap:6px;color:#ccc;">
-        <div>Scene: <strong>${this.engine.state.sceneName}</strong></div>
+        <div>Scene: <strong>${escapeHtml(this.engine.state.sceneName)}</strong></div>
+        <div>Groups / Collections: <strong>${this.engine.state.collections.length}</strong></div>
         <div>Objects: <strong>${this.engine.state.objects.length}</strong></div>
         <div>Vertices: <strong>${stats.verts}</strong> | Faces: <strong>${stats.faces}</strong></div>
-        <div>Units: <strong>Metric (Meters, Degrees)</strong></div>
+        <div>Units: <strong>Metric (Meters / Roblox Studs)</strong></div>
       </div>
     `;
     this.inspectorEl.appendChild(wrap);
   }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '"' ? '&quot;' : '&#39;'
+  );
 }
