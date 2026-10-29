@@ -1,8 +1,10 @@
 import { Capacitor } from '@capacitor/core';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { StatusBar, Style } from '@capacitor/status-bar';
+import { getCurrentAccount, type ModixSavedProject, type ModixUserAccount } from './services/AccountProjectsService';
 import './styles/editor.css';
 import { EditorApp } from './ui/EditorApp';
+import { ProjectsHubScreen } from './ui/ProjectsHubScreen';
 
 async function initNativeEnvironment(): Promise<void> {
   if (Capacitor.isNativePlatform()) {
@@ -19,7 +21,6 @@ async function initNativeEnvironment(): Promise<void> {
     }
   }
 
-  // Request landscape orientation lock where supported by WebView
   try {
     const orientation = screen.orientation as ScreenOrientation & {
       lock?: (mode: string) => Promise<void>;
@@ -32,11 +33,42 @@ async function initNativeEnvironment(): Promise<void> {
   }
 }
 
-function bootstrap(): void {
+async function bootstrap(): Promise<void> {
   const appEl = document.getElementById('app');
   if (!appEl) return;
-  new EditorApp(appEl);
+
   void initNativeEnvironment();
+
+  let activeEditor: EditorApp | null = null;
+  let hubScreen: ProjectsHubScreen | null = null;
+
+  const showProjectsHub = async () => {
+    if (activeEditor) {
+      activeEditor.destroy();
+      activeEditor = null;
+    }
+    const account = await getCurrentAccount();
+    hubScreen = new ProjectsHubScreen(appEl, account, {
+      onOpenProject: (project: ModixSavedProject, acc: ModixUserAccount) => {
+        openEditorForProject(project, acc);
+      }
+    });
+    await hubScreen.mount(account);
+  };
+
+  const openEditorForProject = (project: ModixSavedProject, account: ModixUserAccount) => {
+    hubScreen = null;
+    activeEditor = new EditorApp(appEl, {
+      project,
+      account,
+      onBackToProjects: () => {
+        void showProjectsHub();
+      }
+    });
+  };
+
+  // Mandatory: ALWAYS start on Account Creation/Sign-In -> Projects Screen when opening the app
+  await showProjectsHub();
 }
 
-bootstrap();
+void bootstrap();

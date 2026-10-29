@@ -1,19 +1,22 @@
 import type { OBJExportOptions } from '../engine/Exporters';
+import { Icons } from '../icons/blenderIcons';
 
 export interface DropdownItem {
   label?: string;
+  icon?: string;
   shortcut?: string;
   separator?: boolean;
+  divider?: boolean;
+  danger?: boolean;
   sectionTitle?: string;
   onClick?: () => void;
 }
 
 export type ExportFormatChoice =
-  | 'obj_roblox'
-  | 'obj_blender'
+  | 'obj'
+  | 'obj_zup'
   | 'mtl'
   | 'tex_png'
-  | 'rbxmx'
   | 'glb'
   | 'gltf'
   | 'stl'
@@ -42,7 +45,7 @@ export function openDropdownMenu(anchor: HTMLElement, items: DropdownItem[]): vo
   menu.className = 'modix-dropdown-menu';
 
   for (const item of items) {
-    if (item.separator) {
+    if (item.separator || item.divider) {
       const sep = document.createElement('div');
       sep.className = 'menu-sep';
       menu.appendChild(sep);
@@ -57,10 +60,21 @@ export function openDropdownMenu(anchor: HTMLElement, items: DropdownItem[]): vo
     }
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'menu-item';
+    btn.className = `menu-item${item.danger ? ' danger' : ''}`;
+
+    const leftWrap = document.createElement('span');
+    leftWrap.className = 'menu-item-left';
+    if (item.icon) {
+      const icoSpan = document.createElement('span');
+      icoSpan.className = 'menu-item-ico';
+      icoSpan.innerHTML = item.icon;
+      leftWrap.appendChild(icoSpan);
+    }
     const textSpan = document.createElement('span');
     textSpan.textContent = item.label || '';
-    btn.appendChild(textSpan);
+    leftWrap.appendChild(textSpan);
+    btn.appendChild(leftWrap);
+
     if (item.shortcut) {
       const sc = document.createElement('span');
       sc.className = 'shortcut';
@@ -113,30 +127,49 @@ export function showToast(message: string): void {
   }, 2300);
 }
 
-/** Mobile-safe inline text prompt modal (for Rename Object / Create Group) */
+/** Mobile-safe inline text prompt modal */
 export function openTextPromptModal(opts: {
   title: string;
   label: string;
   initialValue: string;
+  placeholder?: string;
   confirmLabel?: string;
+  extraActionLabel?: string;
+  onExtraAction?: () => void;
   onConfirm: (value: string) => void;
 }): void {
   const overlay = document.createElement('div');
   overlay.className = 'modix-modal-overlay';
   overlay.innerHTML = `
-    <div class="modix-splash-card" style="width:min(360px, 88vw);">
+    <div class="modix-splash-card" style="width:min(380px, 90vw);">
       <div class="drawer-hdr">
         <span>${escapeHtml(opts.title)}</span>
-        <button type="button" class="modix-btn" data-close style="height:20px;padding:0 6px;">✕</button>
+        <button type="button" class="modix-btn" data-close style="height:22px;padding:0 6px;">${Icons.close}</button>
       </div>
       <form id="modix-prompt-form" style="padding:12px;display:flex;flex-direction:column;gap:10px;background:#111;">
         <label style="display:flex;flex-direction:column;gap:5px;color:#ccc;font-size:11px;">
           <span>${escapeHtml(opts.label)}</span>
-          <input type="text" id="modix-prompt-inp" class="props-name-input" style="height:28px;font-size:12px;" value="${escapeHtml(opts.initialValue)}" />
+          <input
+            type="text"
+            id="modix-prompt-inp"
+            class="props-name-input"
+            style="height:30px;font-size:12px;"
+            value="${escapeHtml(opts.initialValue)}"
+            placeholder="${escapeHtml(opts.placeholder || '')}"
+          />
         </label>
-        <div style="display:flex;justify-content:flex-end;gap:8px;">
-          <button type="button" class="modix-btn" data-close>Cancelar</button>
-          <button type="submit" class="modix-btn primary">${escapeHtml(opts.confirmLabel || 'Confirmar')}</button>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+          <div>
+            ${
+              opts.extraActionLabel
+                ? `<button type="button" class="modix-btn" id="modix-prompt-extra">${Icons.upload}<span>${escapeHtml(opts.extraActionLabel)}</span></button>`
+                : ''
+            }
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button type="button" class="modix-btn" data-close>Cancelar</button>
+            <button type="submit" class="modix-btn primary">${escapeHtml(opts.confirmLabel || 'Confirmar')}</button>
+          </div>
         </div>
       </form>
     </div>
@@ -155,6 +188,10 @@ export function openTextPromptModal(opts: {
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) overlay.remove();
   });
+  overlay.querySelector('#modix-prompt-extra')?.addEventListener('click', () => {
+    overlay.remove();
+    opts.onExtraAction?.();
+  });
   overlay.querySelector('#modix-prompt-form')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const v = inp.value.trim();
@@ -163,7 +200,7 @@ export function openTextPromptModal(opts: {
   });
 }
 
-/** Interactive 3D Mesh Plane Cutter / Slicer Modal ("Recortar Malha 3D") */
+/** Interactive 3D Mesh Plane Cutter / Slicer Modal */
 export function openSliceMeshModal(
   objectName: string,
   onSlice: (axis: 'X' | 'Y' | 'Z', mode: 'split' | 'keep_pos' | 'keep_neg', offset: number) => void
@@ -173,8 +210,10 @@ export function openSliceMeshModal(
   overlay.innerHTML = `
     <div class="modix-splash-card" style="width:min(400px, 90vw);">
       <div class="drawer-hdr">
-        <span>✂ Recortar / Fatiar Malha 3D — ${escapeHtml(objectName)}</span>
-        <button type="button" class="modix-btn" data-close style="height:20px;padding:0 6px;">✕</button>
+        <span style="display:flex;align-items:center;gap:6px;">
+          ${Icons.slice3d}<span>Recortar / Fatiar Malha 3D — ${escapeHtml(objectName)}</span>
+        </span>
+        <button type="button" class="modix-btn" data-close style="height:22px;padding:0 6px;">${Icons.close}</button>
       </div>
       <div style="padding:12px;display:flex;flex-direction:column;gap:10px;background:#111;">
         <div style="display:flex;flex-direction:column;gap:4px;">
@@ -199,7 +238,9 @@ export function openSliceMeshModal(
         </label>
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px;">
           <button type="button" class="modix-btn" data-close>Cancelar</button>
-          <button type="button" class="modix-btn primary" id="btn-do-slice">✂ Recortar Agora</button>
+          <button type="button" class="modix-btn primary" id="btn-do-slice">
+            ${Icons.slice3d}<span>Recortar Agora</span>
+          </button>
         </div>
       </div>
     </div>
@@ -228,7 +269,7 @@ export function openSliceMeshModal(
   });
 }
 
-/** Multi-Format Export Hub with Dedicated Roblox Studio .OBJ Tuning */
+/** Universal Multi-Format 3D Export Hub */
 export function openExportHubModal(
   hasTextureOnActive: boolean,
   onExport: (fmt: ExportFormatChoice, objOptions?: OBJExportOptions) => void
@@ -236,50 +277,53 @@ export function openExportHubModal(
   const overlay = document.createElement('div');
   overlay.className = 'modix-modal-overlay';
   overlay.innerHTML = `
-    <div class="modix-splash-card" style="width:min(520px, 94vw);">
+    <div class="modix-splash-card" style="width:min(530px, 94vw);">
       <div class="drawer-hdr">
-        <span>Exportar Modelo 3D &amp; Roblox Studio</span>
-        <button type="button" class="modix-btn" data-close style="height:20px;padding:0 6px;">✕</button>
+        <span style="display:flex;align-items:center;gap:6px;">
+          ${Icons.download}<span>Exportar Modelo 3D</span>
+        </span>
+        <button type="button" class="modix-btn" data-close style="height:22px;padding:0 6px;">${Icons.close}</button>
       </div>
       <div style="padding:12px;display:flex;flex-direction:column;gap:10px;background:#101010;max-height:80vh;overflow-y:auto;">
-        <!-- Highlighted Roblox Studio Box -->
-        <div style="background:#171c26;border:1px solid #2b4c7e;border-radius:6px;padding:10px;display:flex;flex-direction:column;gap:7px;">
-          <div style="font-weight:600;color:#93c5fd;display:flex;justify-content:space-between;align-items:center;">
-            <span>🎮 Roblox Studio (.OBJ + UVs + Normais Y-Up)</span>
-            <span style="font-size:10px;background:#1e3a8a;color:#dbeafe;padding:2px 6px;border-radius:4px;">100% Compatível</span>
+        <div style="background:#171717;border:1px solid #2c2c2c;border-radius:6px;padding:10px;display:flex;flex-direction:column;gap:8px;">
+          <div style="font-weight:600;color:#e6e6e6;display:flex;justify-content:space-between;align-items:center;">
+            <span style="display:flex;align-items:center;gap:6px;">${Icons.file3d}<span>Wavefront (.OBJ + .MTL + UVs)</span></span>
+            <span style="font-size:10px;background:#242424;color:#d4d4d4;padding:2px 6px;border-radius:4px;">Y-Up Universal</span>
           </div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:#cbd5e1;">
-            <label style="display:flex;align-items:center;gap:4px;">
-              Escala Studs:
-              <input type="number" id="exp-rbx-scale" value="1" min="0.1" max="100" step="0.5" class="xf-select" style="width:58px;height:22px;" />
+          <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:#bdbdbd;">
+            <label style="display:flex;align-items:center;gap:5px;">
+              Escala:
+              <input type="number" id="exp-obj-scale" value="1" min="0.01" max="100" step="0.25" class="xf-select" style="width:62px;height:22px;" />
             </label>
-            <label style="display:flex;align-items:center;gap:4px;">
-              <input type="checkbox" id="exp-rbx-combine" /> Unir tudo em 1 MeshPart só
+            <label style="display:flex;align-items:center;gap:5px;">
+              <input type="checkbox" id="exp-obj-combine" /> Combinar malhas visíveis em um único objeto
             </label>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <button type="button" class="modix-btn primary" data-exp="obj_roblox" style="flex:2;">⬇ Exportar .OBJ (Roblox Studio)</button>
-            <button type="button" class="modix-btn" data-exp="mtl" style="flex:1;" title="Biblioteca de materiais .MTL">⬇ .MTL</button>
+            <button type="button" class="modix-btn primary" data-exp="obj" style="flex:2;">
+              ${Icons.download}<span>Exportar .OBJ</span>
+            </button>
+            <button type="button" class="modix-btn" data-exp="mtl" style="flex:1;" title="Biblioteca de materiais .MTL">
+              ${Icons.download}<span>.MTL</span>
+            </button>
             ${
               hasTextureOnActive
-                ? `<button type="button" class="modix-btn" data-exp="tex_png" style="flex:1;" title="Baixar PNG para TextureID no Roblox">⬇ Textura .PNG</button>`
+                ? `<button type="button" class="modix-btn" data-exp="tex_png" style="flex:1;" title="Exportar mapa de textura PNG">${Icons.palette}<span>Textura .PNG</span></button>`
                 : ''
             }
           </div>
-          <button type="button" class="modix-btn" data-exp="rbxmx" style="width:100%;">⬇ Exportar Modelo Nativo Roblox XML (.RBXMX Parts)</button>
         </div>
 
-        <!-- Universal 3D Formats Grid -->
-        <div style="font-size:10.5px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;">Outros Formatos 3D Profissionais</div>
+        <div style="font-size:10.5px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.5px;">Formatos 3D Padrão da Indústria</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-          <button type="button" class="modix-btn" data-exp="glb">📦 glTF Binário (.GLB + Texturas)</button>
-          <button type="button" class="modix-btn" data-exp="gltf">📄 glTF 2.0 JSON (.GLTF)</button>
-          <button type="button" class="modix-btn" data-exp="obj_blender">🧊 Wavefront (.OBJ Z-Up Blender)</button>
-          <button type="button" class="modix-btn" data-exp="dae">🔗 COLLADA (.DAE Maya/Godot)</button>
-          <button type="button" class="modix-btn" data-exp="stl">🖨 Impressão 3D (.STL)</button>
-          <button type="button" class="modix-btn" data-exp="ply">🎨 Stanford Polygon (.PLY RGB)</button>
-          <button type="button" class="modix-btn" data-exp="usdz">📱 Apple AR (.USDZ iOS)</button>
-          <button type="button" class="modix-btn" data-exp="modix">💾 Projeto Modix (.MODIX)</button>
+          <button type="button" class="modix-btn" data-exp="glb">${Icons.file3d}<span>glTF Binário (.GLB + PBR)</span></button>
+          <button type="button" class="modix-btn" data-exp="gltf">${Icons.file3d}<span>glTF 2.0 JSON (.GLTF)</span></button>
+          <button type="button" class="modix-btn" data-exp="dae">${Icons.layers}<span>COLLADA 1.4 (.DAE)</span></button>
+          <button type="button" class="modix-btn" data-exp="usdz">${Icons.cubeSmall}<span>Universal Scene (.USDZ)</span></button>
+          <button type="button" class="modix-btn" data-exp="stl">${Icons.cubeSmall}<span>Stereolithography (.STL)</span></button>
+          <button type="button" class="modix-btn" data-exp="ply">${Icons.palette}<span>Stanford Polygon (.PLY)</span></button>
+          <button type="button" class="modix-btn" data-exp="obj_zup">${Icons.file3d}<span>Wavefront Z-Up (.OBJ)</span></button>
+          <button type="button" class="modix-btn" data-exp="modix">${Icons.save}<span>Projeto Modix (.MODIX)</span></button>
         </div>
       </div>
     </div>
@@ -294,11 +338,11 @@ export function openExportHubModal(
   overlay.querySelectorAll<HTMLButtonElement>('[data-exp]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const fmt = btn.dataset.exp as ExportFormatChoice;
-      const scale = parseFloat(overlay.querySelector<HTMLInputElement>('#exp-rbx-scale')?.value || '1') || 1;
-      const combine = Boolean(overlay.querySelector<HTMLInputElement>('#exp-rbx-combine')?.checked);
+      const scale = parseFloat(overlay.querySelector<HTMLInputElement>('#exp-obj-scale')?.value || '1') || 1;
+      const combine = Boolean(overlay.querySelector<HTMLInputElement>('#exp-obj-combine')?.checked);
       overlay.remove();
       onExport(fmt, {
-        yUpForRoblox: fmt === 'obj_roblox',
+        yUp: fmt !== 'obj_zup',
         scale,
         triangulate: true,
         combineMeshes: combine
@@ -307,73 +351,25 @@ export function openExportHubModal(
   });
 }
 
-export function openSplashModal(actions: {
-  onNewGeneral: () => void;
-  onNewSculpting: () => void;
-  onImportModel: () => void;
-  onExportHub: () => void;
-  onOpenAIAgent?: () => void;
-}): void {
-  const overlay = document.createElement('div');
-  overlay.className = 'modix-modal-overlay';
-  overlay.innerHTML = `
-    <div class="modix-splash-card">
-      <div class="splash-hero">
-        <img src="./brand/modix-full-white.png" alt="Modix 3D" />
-        <div class="splash-version">Modix 3D Studio v2.0 — Mobile Landscape + Multi-IA &amp; Roblox Studio</div>
-      </div>
-      <div class="splash-actions">
-        <button type="button" class="modix-btn primary" data-act="general">Nova Cena Geral</button>
-        <button type="button" class="modix-btn" data-act="ai">✦ Abrir Agente Multi-IA</button>
-        <button type="button" class="modix-btn" data-act="import">Importar 3D (.OBJ/.FBX/.GLB...)</button>
-        <button type="button" class="modix-btn" data-act="export">Exportar (.OBJ Roblox / .GLB...)</button>
-        <button type="button" class="modix-btn" data-act="sculpt" style="grid-column: span 2;">Nova Esfera de Escultura 3D</button>
-      </div>
-    </div>
-  `;
-
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
-  });
-  overlay.querySelector('[data-act="general"]')?.addEventListener('click', () => {
-    overlay.remove();
-    actions.onNewGeneral();
-  });
-  overlay.querySelector('[data-act="sculpt"]')?.addEventListener('click', () => {
-    overlay.remove();
-    actions.onNewSculpting();
-  });
-  overlay.querySelector('[data-act="import"]')?.addEventListener('click', () => {
-    overlay.remove();
-    actions.onImportModel();
-  });
-  overlay.querySelector('[data-act="export"]')?.addEventListener('click', () => {
-    overlay.remove();
-    actions.onExportHub();
-  });
-  overlay.querySelector('[data-act="ai"]')?.addEventListener('click', () => {
-    overlay.remove();
-    actions.onOpenAIAgent?.();
-  });
-
-  document.body.appendChild(overlay);
-}
-
 export function openRenderResultModal(dataUrl: string, onSavePNG: () => void): void {
   const overlay = document.createElement('div');
   overlay.className = 'modix-modal-overlay';
   overlay.innerHTML = `
     <div class="modix-splash-card" style="width: min(560px, 92vw);">
       <div class="drawer-hdr">
-        <span>Modix Render Result (1280 × 720)</span>
-        <button type="button" class="modix-btn" data-act="close" style="height:20px;padding:0 6px;">✕</button>
+        <span style="display:flex;align-items:center;gap:6px;">
+          ${Icons.cameraPhoto}<span>Resultado da Renderização (1280 x 720)</span>
+        </span>
+        <button type="button" class="modix-btn" data-act="close" style="height:22px;padding:0 6px;">${Icons.close}</button>
       </div>
       <div style="padding:10px;background:#090909;display:flex;justify-content:center;">
         <img src="${dataUrl}" alt="Render Result" style="max-width:100%;max-height:58vh;border:1px solid #2b2b2b;border-radius:4px;" />
       </div>
       <div style="padding:10px;display:flex;justify-content:flex-end;gap:8px;background:#111;">
         <button type="button" class="modix-btn" data-act="close2">Fechar</button>
-        <button type="button" class="modix-btn primary" data-act="save">Salvar / Compartilhar PNG</button>
+        <button type="button" class="modix-btn primary" data-act="save">
+          ${Icons.download}<span>Salvar / Compartilhar PNG</span>
+        </button>
       </div>
     </div>
   `;

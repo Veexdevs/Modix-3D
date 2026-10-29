@@ -268,7 +268,7 @@ export function createPrimitiveMesh(type: PrimitiveType): EditableMeshData {
     }
 
     case 'wedge': {
-      // Classic Roblox WedgePart (sloped ramp from -Y front bottom to +Y back top)
+      // Sloped wedge ramp from -Y front bottom to +Y back top
       const vertices: [number, number, number][] = [
         [-1, -1, -1], // 0 front-left-bottom
         [1, -1, -1],  // 1 front-right-bottom
@@ -288,7 +288,7 @@ export function createPrimitiveMesh(type: PrimitiveType): EditableMeshData {
     }
 
     case 'corner_wedge': {
-      // Classic Roblox CornerWedgePart
+      // Sloped corner wedge primitive
       const vertices: [number, number, number][] = [
         [-1, -1, -1], // 0
         [1, -1, -1],  // 1
@@ -1470,7 +1470,7 @@ function buildWireframeStrutMesh(mesh: EditableMeshData, radius: number): Editab
   return { vertices: verts, faces, shadeSmooth: false };
 }
 
-/** Computes bounding-box-normalized UV coordinates for any vertex & face normal (Roblox & PBR ready!) */
+/** Computes bounding-box-normalized UV coordinates for any vertex & face normal (PBR & universal 3D ready) */
 export function computeProjectedUV(
   v: [number, number, number],
   fn: [number, number, number],

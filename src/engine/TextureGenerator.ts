@@ -40,7 +40,7 @@ export function generateProceduralTextureDataUrl(opts: ProceduralTextureOptions)
 
   switch (opts.preset) {
     case 'studs': {
-      // Classic Roblox Plastic Studs Grid
+      // Raised tactile grid tile pattern
       const cells = Math.round(4 * sc);
       const cellSz = size / cells;
       ctx.strokeStyle = 'rgba(0,0,0,0.22)';

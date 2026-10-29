@@ -123,7 +123,7 @@ async function callOpenRouterWithFallback(
         // If 401 unauthorized, don't retry other models with same invalid key
         if (resp.status === 401) {
           throw new Error(
-            'Chave da OpenRouter inválida ou expirada (HTTP 401). Toque no ícone ⚙ no painel IA para configurar sua chave.'
+            'Chave da OpenRouter inválida ou expirada (HTTP 401). Abra as configurações no painel IA para informar sua chave.'
           );
         }
         continue;
@@ -154,10 +154,11 @@ export async function askModixIA(
   engine: ModixEngine
 ): Promise<string> {
   const sceneSummary = engine.getSceneSummaryForAI();
-  const sysPrompt = `Você é a IA Assistente oficial do Modix 3D (edição mobile landscape inspirada no Blender, compatível com Roblox Studio, Android e iOS).
-Neste modo ("IA"), você APENAS responde dúvidas, explica como modelar, texturizar, exportar .OBJ para o Roblox Studio, usar atalhos/ferramentas ou analisa a cena atual.
+  const sysPrompt = `Você é a IA Assistente oficial do Modix 3D (estúdio mobile landscape profissional de modelagem, escultura e texturização 3D para Android e iOS).
+Neste modo ("IA"), você APENAS responde dúvidas, explica como modelar, texturizar, exportar formatos 3D (.OBJ, .GLB, .GLTF, .USDZ, .STL, .PLY, .DAE), usar atalhos/ferramentas ou analisa a cena atual.
+NÃO use emojis nas suas respostas.
 NÃO invente que executou mudanças na cena neste modo (se o usuário pedir para criar/modificar automaticamente, explique como fazer passo a passo OU sugira trocar a chave acima para o modo "Agente").
-Responda no mesmo idioma do usuário (Português por padrão), de forma clara, amigável e direta.
+Responda no mesmo idioma do usuário (Português por padrão), de forma clara, técnica e direta.
 
 Estado atual da cena 3D no editor (Z-up, onde Z é altura):
 ${sceneSummary}`;
@@ -291,7 +292,7 @@ function extractJsonFromText(raw: string): AgentPlanPayload | null {
 }
 
 async function generateTextureSvgViaArtistAI(description: string): Promise<string> {
-  const sys = `You are a master 2D Game Texture SVG Artist for 3D models (Roblox Studio & Blender).
+  const sys = `You are a master 2D PBR & 3D Surface Texture SVG Artist.
 Return ONLY a complete, valid, rich, seamless 512x512 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">...</svg> with NO markdown fences and NO explanations.
 Fill the entire 512x512 background first, then layer gradients, geometric panels, details, highlights, shadows, cracks, patterns, or decals matching the user's texture description.`;
 
@@ -344,18 +345,18 @@ ${sceneSummary}`;
         1100
       );
       architectBlueprint = archRes.content;
-      stepsLog.push(`🧠 IA Arquiteta (${shortModel(archRes.modelUsed)}): Blueprint espacial definido`);
+      stepsLog.push(`IA Arquiteta (${shortModel(archRes.modelUsed)}): Blueprint espacial definido`);
     } catch {
       // Non-fatal: Builder AI can proceed directly if Architect times out
     }
   }
 
-  // STAGE 2: Specialist AI #2 — 3D Geometry, Cutter & Scene Builder AI
+  // STAGE 2: Specialist AI #2 - 3D Geometry, Cutter & Scene Builder AI
   onProgress('IA Modeladora 3D', 'Construindo geometrias 3D, cortes, grupos e materiais...');
 
   const builderSystem = `Você é a IA Engenheira & Modeladora 3D do Modix 3D. Você controla diretamente o motor 3D retornando EXCLUSIVAMENTE um objeto JSON válido no formato:
 {
-  "reply": "Resumo amigável em Português do que foi criado/modificado",
+  "reply": "Resumo claro em Português (sem emojis) do que foi criado/modificado",
   "actions": [ ... ]
 }
 
@@ -385,7 +386,7 @@ OPERAÇÕES DISPONÍVEIS EM "actions":
 7. Pintar cor e material PBR ("target" pode ser nome do objeto, "SELECTED" ou "ALL"):
    { "op": "paint_material", "target": "Lamina", "color": "#38bdf8", "metallic": 0.85, "roughness": 0.18, "emissionColor": "#0284c7", "emissionStrength": 0.35, "opacity": 1.0 }
 8. Aplicar textura procedural rápida:
-   preset pode ser: "studs" (Roblox Studs!), "checker", "brick", "wood", "metal", "carbon", "scifi", "grass", "stone", "lava", "marble", "stripes", "gradient", "noise"
+   preset pode ser: "studs", "checker", "brick", "wood", "metal", "carbon", "scifi", "grass", "stone", "lava", "marble", "stripes", "gradient", "noise"
    { "op": "apply_procedural_texture", "target": "Parede", "preset": "brick", "primaryColor": "#9b3b2e", "secondaryColor": "#cbd5e1", "uvProjection": "box", "repeatX": 2, "repeatY": 2 }
 9. Gerar textura artística customizada com a IA Artista de Texturas (512x512 PNG sob medida!):
    { "op": "generate_custom_texture", "target": "Escudo", "description": "Royal medieval golden crest with dragon emblem on dark cobalt steel armor plate", "uvProjection": "box", "repeatX": 1, "repeatY": 1 }
@@ -399,7 +400,8 @@ OPERAÇÕES DISPONÍVEIS EM "actions":
    { "op": "group_objects", "targets": ["Roda1", "Roda2"], "groupName": "Rodas" }
 
 REGRAS DE OURO:
-- Quando o usuário pedir para CRIAR um modelo 3D (ex: carro, casa, espada, personagem Roblox, robô, trono, castelo, árvore, pistola sci-fi, mesa, cadeira), construa um modelo RICO e BEM PROPORCIONADO compondo entre 6 e 24 partes bem posicionadas, agrupadas, coloridas e texturizadas!
+- Quando o usuário pedir para CRIAR um modelo 3D (ex: carro, casa, espada, personagem, robô, trono, castelo, árvore, pistola sci-fi, mesa, cadeira), construa um modelo RICO e BEM PROPORCIONADO compondo entre 6 e 24 partes bem posicionadas, agrupadas, coloridas e texturizadas!
+- NÃO use emojis em nenhum campo.
 - Retorne APENAS JSON puro, sem texto fora do JSON.`;
 
   const recentContext: ORMessage[] = history.slice(-4).map((h) => ({
@@ -426,22 +428,22 @@ REGRAS DE OURO:
   if (!plan) {
     return {
       reply: builderRes.content,
-      steps: [...stepsLog, `💬 Resposta direta (${shortModel(builderRes.modelUsed)})`]
+      steps: [...stepsLog, `Resposta direta (${shortModel(builderRes.modelUsed)})`]
     };
   }
 
   stepsLog.push(
-    `🧊 IA Modeladora 3D (${shortModel(builderRes.modelUsed)}): ${plan.actions.length} operações geradas`
+    `IA Modeladora 3D (${shortModel(builderRes.modelUsed)}): ${plan.actions.length} operações geradas`
   );
 
-  // STAGE 3: Specialist AI #3 — Texture Artist AI runs in parallel for any custom textures!
+  // STAGE 3: Specialist AI #3 - Texture Artist AI runs in parallel for any custom textures!
   const customTexActions = plan.actions.filter((a) => a.op === 'generate_custom_texture');
   const preRenderedCustomTextures = new Map<AgentAction, string>();
 
   if (customTexActions.length > 0) {
     onProgress(
       'IA Artista de Texturas',
-      `Pintando ${customTexActions.length} textura(s) 512×512 exclusivas...`
+      `Pintando ${customTexActions.length} textura(s) 512x512 exclusivas...`
     );
     await Promise.all(
       customTexActions.map(async (act) => {
@@ -461,14 +463,14 @@ REGRAS DE OURO:
       })
     );
     stepsLog.push(
-      `🎨 IA Artista de Texturas: ${customTexActions.length} textura(s) HD 512×512 gerada(s)`
+      `IA Artista de Texturas: ${customTexActions.length} textura(s) HD 512x512 gerada(s)`
     );
   }
 
   // STAGE 4: Execute all actions atomically (single Undo snapshot!)
   onProgress('Motor Modix 3D', 'Aplicando malhas, cortes, materiais e texturas na cena...');
   const executedCount = executeAgentActionsBatch(engine, plan.actions, preRenderedCustomTextures);
-  stepsLog.push(`✅ Cena atualizada (${executedCount} ação(ões) aplicadas — 1-toque Undo disponível)`);
+  stepsLog.push(`Cena atualizada (${executedCount} ação(ões) aplicadas - Undo disponível)`);
 
   return {
     reply: plan.reply,

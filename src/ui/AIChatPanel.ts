@@ -9,6 +9,7 @@ import {
   type ChatRoleMode
 } from '../ai/OpenRouterAgent';
 import type { ModixEngine } from '../engine/ModixEngine';
+import { Icons } from '../icons/blenderIcons';
 
 export class AIChatPanel {
   private engine: ModixEngine;
@@ -23,7 +24,7 @@ export class AIChatPanel {
       role: 'assistant',
       mode: 'agente',
       content:
-        'Olá! Escolha acima entre **IA** (apenas responde dúvidas) ou **Agente** (equipe de várias IAs trabalhando juntas para criar modelos 3D completos, pintar, recortar malhas, agrupar e gerar texturas 512×512!).'
+        'Olá! Escolha acima entre **IA** (apenas responde dúvidas) ou **Agente** (equipe de várias IAs trabalhando juntas para criar modelos 3D completos, pintar, recortar malhas, agrupar e gerar texturas 512x512).'
     }
   ];
 
@@ -51,6 +52,14 @@ export class AIChatPanel {
     }
   }
 
+  public destroy(): void {
+    this.isOpen = false;
+    if (this.panelEl) {
+      this.panelEl.remove();
+      this.panelEl = null;
+    }
+  }
+
   private ensureMounted(): void {
     if (this.panelEl && document.body.contains(this.panelEl)) {
       this.panelEl.style.display = 'flex';
@@ -73,37 +82,37 @@ export class AIChatPanel {
       this.mode === 'agente'
         ? [
             'Crie uma espada lendária detalhada com textura brilhante',
-            'Construa uma casa estilo Roblox com telhado, porta e grama',
+            'Construa uma casa com telhado, porta, janelas e jardim',
             'Crie um robô futurista sci-fi articulado em grupo',
             'Recorte o objeto selecionado ao meio no eixo Z',
-            'Gere uma textura épica de lava vulcânica no objeto ativo'
+            'Gere uma textura de lava vulcânica no objeto ativo'
           ]
         : [
-            'Como exportar .OBJ pro Roblox Studio sem perder textura?',
+            'Como exportar modelos .OBJ e .GLB com texturas e normais?',
             'Como recortar, unir e colocar objetos em grupo no Modix?'
           ];
 
     this.panelEl.innerHTML = `
       <div class="modix-ai-header">
         <div class="modix-ai-title">
-          <span class="modix-ai-spark">✦</span>
+          <span class="modix-ai-spark">${Icons.sparkles}</span>
           <span>Modix Studio AI</span>
         </div>
         <div style="display:flex;gap:5px;align-items:center;">
-          <button class="modix-ai-icon-btn ${this.showSettings ? 'active' : ''}" id="ai-btn-settings" title="Configurações OpenRouter & Multi-IA">⚙</button>
-          <button class="modix-ai-icon-btn" id="ai-btn-clear" title="Limpar conversa">🗑</button>
-          <button class="modix-ai-icon-btn" id="ai-btn-close" title="Fechar">✕</button>
+          <button class="modix-ai-icon-btn ${this.showSettings ? 'active' : ''}" id="ai-btn-settings" title="Configurações OpenRouter & Multi-IA">${Icons.settings}</button>
+          <button class="modix-ai-icon-btn" id="ai-btn-clear" title="Limpar conversa">${Icons.trash}</button>
+          <button class="modix-ai-icon-btn" id="ai-btn-close" title="Fechar">${Icons.close}</button>
         </div>
       </div>
 
       <!-- Mode Switcher: IA vs Agente -->
       <div class="modix-ai-mode-switch">
         <button class="modix-ai-mode-btn ${this.mode === 'ia' ? 'active ia' : ''}" data-mode="ia">
-          <span class="mode-dot"></span>
+          ${Icons.chat}
           <span><b>IA</b> · Só Responde</span>
         </button>
         <button class="modix-ai-mode-btn ${this.mode === 'agente' ? 'active agente' : ''}" data-mode="agente">
-          <span class="mode-dot"></span>
+          ${Icons.bolt}
           <span><b>Agente</b> · Cria &amp; Edita 3D</span>
         </button>
       </div>
@@ -111,11 +120,19 @@ export class AIChatPanel {
       ${
         this.mode === 'agente'
           ? `<div class="modix-ai-subbar">
-              <span>${multiOn ? '🤝 Multi-IA Ativa: Arquiteta + Modeladora + Artista' : '⚡ Agente Direto'}</span>
-              <button class="modix-ai-undo-chip" id="ai-quick-undo" title="Desfazer última alteração na cena">↶ Undo 3D</button>
+              <span style="display:inline-flex;align-items:center;gap:5px;">
+                ${multiOn ? Icons.layers : Icons.bolt}
+                <span>${multiOn ? 'Multi-IA Ativa: Arquiteta + Modeladora + Artista' : 'Agente Direto'}</span>
+              </span>
+              <button class="modix-ai-undo-chip" id="ai-quick-undo" title="Desfazer última alteração na cena">
+                ${Icons.undo}<span>Undo 3D</span>
+              </button>
             </div>`
           : `<div class="modix-ai-subbar ia-sub">
-              <span>💬 Modo Consulta: responde dúvidas sem alterar seus objetos 3D</span>
+              <span style="display:inline-flex;align-items:center;gap:5px;">
+                ${Icons.chat}
+                <span>Modo Consulta: responde dúvidas sem alterar seus objetos 3D</span>
+              </span>
             </div>`
       }
 
@@ -143,20 +160,25 @@ export class AIChatPanel {
           .map(
             (m) => `
           <div class="modix-ai-msg ${m.role} ${m.mode}">
-            <div class="modix-ai-msg-meta">
+            <div class="modix-ai-msg-meta" style="display:flex;align-items:center;gap:4px;">
               ${
                 m.role === 'user'
-                  ? 'Você'
+                  ? `${Icons.user}<span>Você</span>`
                   : m.mode === 'agente'
-                    ? '⚡ Agente Multi-IA 3D'
-                    : '💬 IA Assistente'
+                    ? `${Icons.bolt}<span>Agente Multi-IA 3D</span>`
+                    : `${Icons.chat}<span>IA Assistente</span>`
               }
             </div>
             <div class="modix-ai-msg-text">${formatSimpleMarkdown(m.content)}</div>
             ${
               m.agentSteps && m.agentSteps.length > 0
                 ? `<div class="modix-ai-steps">
-                    ${m.agentSteps.map((s) => `<div class="modix-ai-step-item">${escapeHtml(s)}</div>`).join('')}
+                    ${m.agentSteps
+                      .map(
+                        (s) =>
+                          `<div class="modix-ai-step-item" style="display:flex;align-items:center;gap:4px;">${Icons.check}<span>${escapeHtml(s)}</span></div>`
+                      )
+                      .join('')}
                    </div>`
                 : ''
             }
@@ -197,7 +219,7 @@ export class AIChatPanel {
           placeholder="${
             this.mode === 'agente'
               ? 'Peça para criar modelo 3D, pintar, recortar ou gerar textura...'
-              : 'Pergunte qualquer coisa sobre 3D, Modix ou Roblox Studio...'
+              : 'Pergunte qualquer coisa sobre modelagem 3D, UVs ou exportação...'
           }"
           autocomplete="off"
           ${this.busy ? 'disabled' : ''}
@@ -208,11 +230,9 @@ export class AIChatPanel {
       </form>
     `;
 
-    // Auto-scroll messages to bottom
     const listEl = this.panelEl.querySelector<HTMLElement>('#ai-msg-list');
     if (listEl) listEl.scrollTop = listEl.scrollHeight;
 
-    // Bind events
     this.panelEl.querySelector('#ai-btn-close')?.addEventListener('click', () => this.close());
     this.panelEl.querySelector('#ai-btn-clear')?.addEventListener('click', () => {
       if (this.busy) return;
@@ -222,8 +242,8 @@ export class AIChatPanel {
           mode: this.mode,
           content:
             this.mode === 'agente'
-              ? 'Conversa limpa! O que nossa equipe de IAs deve modelar, recortar, pintar ou texturizar agora?'
-              : 'Conversa limpa! Qual sua dúvida sobre modelagem 3D ou exportação?'
+              ? 'Conversa limpa. O que nossa equipe de IAs deve modelar, recortar, pintar ou texturizar agora?'
+              : 'Conversa limpa. Qual sua dúvida sobre modelagem 3D ou exportação?'
         }
       ];
       this.render();
@@ -256,7 +276,7 @@ export class AIChatPanel {
       const inp = this.panelEl?.querySelector<HTMLInputElement>('#ai-key-input');
       if (inp && inp.value.trim()) {
         setCustomOpenRouterKey(inp.value.trim());
-        this.showToast('Chave personalizada OpenRouter salva!');
+        this.showToast('Chave personalizada OpenRouter salva.');
         this.showSettings = false;
         this.render();
       }
@@ -323,14 +343,14 @@ export class AIChatPanel {
           content: res.reply,
           agentSteps: res.steps
         });
-        this.showToast('Agente 3D concluiu as alterações na cena!');
+        this.showToast('Agente 3D concluiu as alterações na cena.');
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.history.push({
         role: 'assistant',
         mode: activeMode,
-        content: `⚠️ **Erro**: ${msg}`
+        content: `**Erro**: ${msg}`
       });
     } finally {
       this.busy = false;
