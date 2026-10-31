@@ -680,7 +680,9 @@ export async function buildPbrSceneFromObjects(
 
     const stdMat = new THREE.MeshStandardMaterial({
       name: obj.material.name || `${sanitizeObjName(obj.name)}_Mat`,
-      color: new THREE.Color(mapTex ? '#ffffff' : obj.material.baseColor || '#d4d4d4'),
+      color: new THREE.Color(
+        mapTex || hasVC ? '#ffffff' : obj.material.baseColor || '#d4d4d4'
+      ),
       metalness: Math.max(0, Math.min(1, obj.material.metallic ?? 0.08)),
       roughness: Math.max(0.04, Math.min(1, obj.material.roughness ?? 0.45)),
       emissive: new THREE.Color(obj.material.emissionColor || '#000000'),

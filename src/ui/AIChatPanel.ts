@@ -1,16 +1,22 @@
 import {
   askModixIA,
+  fetchUnlockedOpenRouterCatalog,
+  getPreferredOpenRouterModel,
   hasCustomOpenRouterKey,
   isMultiAIEnabled,
   prepareReferenceImage,
   runModixMultiAgent,
   setCustomOpenRouterKey,
   setMultiAIEnabled,
+  setPreferredOpenRouterModel,
+  UNLOCKED_FRONTIER_MODELS,
   type ChatHistoryItem,
   type ChatRoleMode,
-  type ReferenceImageAttachment
+  type ReferenceImageAttachment,
+  type UnlockedAIModelOption
 } from '../ai/OpenRouterAgent';
 import type { ModixEngine } from '../engine/ModixEngine';
+import { onLanguageChange, tr } from '../i18n/I18nService';
 import { Icons } from '../icons/blenderIcons';
 
 const MAX_REFERENCE_IMAGES = 8;
@@ -26,10 +32,15 @@ export class AIChatPanel {
   private draftText = '';
   private pendingRefs: ReferenceImageAttachment[] = [];
   private history: ChatHistoryItem[] = [];
+  private availableModels: UnlockedAIModelOption[] = [...UNLOCKED_FRONTIER_MODELS];
+  private unsubLang: (() => void) | null = null;
 
   constructor(engine: ModixEngine, showToast: (msg: string) => void) {
     this.engine = engine;
     this.showToast = showToast;
+    this.unsubLang = onLanguageChange(() => {
+      if (this.isOpen) this.render();
+    });
   }
 
   public toggle(): void {
@@ -43,6 +54,7 @@ export class AIChatPanel {
     this.syncTopbarButton();
     this.ensureMounted();
     this.render();
+    void this.refreshModelCatalog();
   }
 
   public close(): void {
@@ -56,9 +68,25 @@ export class AIChatPanel {
   public destroy(): void {
     this.isOpen = false;
     this.syncTopbarButton();
+    this.unsubLang?.();
+    this.unsubLang = null;
     if (this.panelEl) {
       this.panelEl.remove();
       this.panelEl = null;
+    }
+  }
+
+  private async refreshModelCatalog(): Promise<void> {
+    try {
+      const list = await fetchUnlockedOpenRouterCatalog();
+      if (list.length > this.availableModels.length) {
+        this.availableModels = list;
+        if (this.isOpen && this.showSettings) {
+          this.render();
+        }
+      }
+    } catch {
+      // Keep curated frontier list
     }
   }
 
@@ -116,7 +144,7 @@ export class AIChatPanel {
   private async addReferenceFiles(files: File[]): Promise<void> {
     const remaining = MAX_REFERENCE_IMAGES - this.pendingRefs.length;
     if (remaining <= 0) {
-      this.showToast(`Limite máximo de ${MAX_REFERENCE_IMAGES} imagens por envio.`);
+      this.showToast(`Max ${MAX_REFERENCE_IMAGES}`);
       return;
     }
 
@@ -129,7 +157,7 @@ export class AIChatPanel {
         added++;
       } catch (err) {
         this.showToast(
-          err instanceof Error ? err.message : 'Não foi possível processar a imagem.'
+          err instanceof Error ? err.message : tr('Erro')
         );
       }
     }
@@ -143,35 +171,36 @@ export class AIChatPanel {
 
     const multiOn = isMultiAIEnabled();
     const customKey = hasCustomOpenRouterKey();
+    const preferredModel = getPreferredOpenRouterModel();
     const hasPendingRefs = this.pendingRefs.length > 0;
     const isAgent = this.mode === 'agente';
 
     this.panelEl.innerHTML = `
       <!-- Compact Clean Header -->
       <div class="modix-ai-hdr">
-        <div class="modix-ai-seg" role="tablist" aria-label="Modo do Chat">
+        <div class="modix-ai-seg" role="tablist">
           <button
             type="button"
             class="modix-ai-seg-btn ${!isAgent ? 'active' : ''}"
             data-mode="ia"
-            title="Modo IA: responde dúvidas e analisa imagens sem alterar a cena"
+            title="${escapeHtml(tr('Modo IA: responde dúvidas e analisa imagens sem alterar a cena'))}"
           >
-            ${Icons.chat}<span>IA</span>
+            ${Icons.chat}<span>${escapeHtml(tr('IA'))}</span>
           </button>
           <button
             type="button"
             class="modix-ai-seg-btn ${isAgent ? 'active' : ''}"
             data-mode="agente"
-            title="Modo Agente: modela, esculpe, pinta e replica referências em 3D"
+            title="${escapeHtml(tr('Modo Agente: modela, esculpe, pinta e replica referências em 3D'))}"
           >
-            ${Icons.bolt}<span>Agente</span>
+            ${Icons.bolt}<span>${escapeHtml(tr('Agente'))}</span>
           </button>
         </div>
 
         <div class="modix-ai-hdr-actions">
           ${
             isAgent
-              ? `<button type="button" class="modix-ai-icon-btn" id="ai-quick-undo" title="Desfazer última ação 3D">
+              ? `<button type="button" class="modix-ai-icon-btn" id="ai-quick-undo" title="${escapeHtml(tr('Desfazer última ação 3D'))}">
                   ${Icons.undo}
                  </button>`
               : ''
@@ -180,18 +209,18 @@ export class AIChatPanel {
             type="button"
             class="modix-ai-icon-btn ${this.showSettings ? 'active' : ''}"
             id="ai-btn-settings"
-            title="Configurações"
+            title="${escapeHtml(tr('Configurações'))}"
           >
             ${Icons.settings}
           </button>
           ${
             this.history.length > 0
-              ? `<button type="button" class="modix-ai-icon-btn" id="ai-btn-clear" title="Limpar conversa">
+              ? `<button type="button" class="modix-ai-icon-btn" id="ai-btn-clear" title="${escapeHtml(tr('Limpar conversa'))}">
                   ${Icons.trash}
                  </button>`
               : ''
           }
-          <button type="button" class="modix-ai-icon-btn" id="ai-btn-close" title="Fechar">
+          <button type="button" class="modix-ai-icon-btn" id="ai-btn-close" title="${escapeHtml(tr('Fechar'))}">
             ${Icons.close}
           </button>
         </div>
@@ -200,24 +229,43 @@ export class AIChatPanel {
       ${
         this.showSettings
           ? `<div class="modix-ai-settings">
+              <div class="modix-ai-settings-lbl">${escapeHtml(tr('Modelo de IA (OpenRouter)'))}</div>
+              <select id="ai-model-select" class="modix-ai-model-select" data-no-i18n="true">
+                ${this.availableModels
+                  .map((m) => {
+                    const label =
+                      m.id === 'auto'
+                        ? tr('Auto (Melhores IAs do Mundo em Conjunto)')
+                        : `${m.label} — ${m.provider}`;
+                    return `<option value="${escapeHtml(m.id)}" ${preferredModel === m.id ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+                  })
+                  .join('')}
+              </select>
+
               <label class="modix-ai-chk">
                 <input type="checkbox" id="ai-chk-multi" ${multiOn ? 'checked' : ''} />
-                <span>Pipeline Multi-IA (Visão + Modelagem + Inspeção 3D)</span>
+                <span>${escapeHtml(tr('Pipeline Multi-IA (Visão + Modelagem + Inspeção 3D)'))}</span>
               </label>
+
               <div class="modix-ai-settings-lbl">
-                Chave OpenRouter ${customKey ? '(personalizada)' : '(padrão ativa)'}
+                ${escapeHtml(
+                  customKey
+                    ? tr('Chave personalizada OpenRouter ativa neste dispositivo.')
+                    : tr('Chave integrada ativa por padrão. Opcionalmente informe sua própria chave OpenRouter.')
+                )}
               </div>
               <div class="modix-ai-settings-row">
                 <input
                   type="password"
                   id="ai-key-input"
                   class="modix-ai-key-inp"
+                  data-no-i18n="true"
                   placeholder="sk-or-v1-..."
                 />
-                <button type="button" class="modix-btn-sm" id="ai-key-save">Salvar</button>
+                <button type="button" class="modix-btn-sm" id="ai-key-save">${escapeHtml(tr('Salvar'))}</button>
                 ${
                   customKey
-                    ? `<button type="button" class="modix-btn-sm" id="ai-key-reset">Padrão</button>`
+                    ? `<button type="button" class="modix-btn-sm" id="ai-key-reset">${escapeHtml(tr('Padrão'))}</button>`
                     : ''
                 }
               </div>
@@ -231,13 +279,15 @@ export class AIChatPanel {
           this.history.length === 0 && !this.busy
             ? `<div class="modix-ai-empty">
                 <div class="modix-ai-empty-ico">${isAgent ? Icons.bolt : Icons.chat}</div>
-                <div class="modix-ai-empty-title">${isAgent ? 'Agente 3D' : 'Assistente IA'}</div>
+                <div class="modix-ai-empty-title">${escapeHtml(tr(isAgent ? 'Agente 3D' : 'Assistente IA'))}</div>
                 <div class="modix-ai-empty-sub">
-                  ${
-                    isAgent
-                      ? 'Peça qualquer modelo 3D ou anexe fotos de referência para réplica fiel.'
-                      : 'Tire dúvidas sobre modelagem, topologia, texturas ou exportação 3D.'
-                  }
+                  ${escapeHtml(
+                    tr(
+                      isAgent
+                        ? 'Peça qualquer modelo 3D ou anexe fotos de referência para réplica fiel.'
+                        : 'Tire dúvidas sobre modelagem, topologia, texturas ou exportação 3D.'
+                    )
+                  )}
                 </div>
                </div>`
             : this.history
@@ -245,13 +295,15 @@ export class AIChatPanel {
                   (m) => `
                 <div class="modix-ai-msg ${m.role}">
                   <div class="modix-ai-msg-meta">
-                    ${
-                      m.role === 'user'
-                        ? 'Você'
-                        : m.mode === 'agente'
-                          ? 'Agente'
-                          : 'IA'
-                    }
+                    ${escapeHtml(
+                      tr(
+                        m.role === 'user'
+                          ? 'Você'
+                          : m.mode === 'agente'
+                            ? 'Agente'
+                            : 'IA'
+                      )
+                    )}
                   </div>
                   ${
                     m.images && m.images.length > 0
@@ -259,8 +311,8 @@ export class AIChatPanel {
                           ${m.images
                             .map(
                               (img, idx) => `
-                            <div class="modix-ai-msg-ref-thumb" title="${escapeHtml(img.name)}">
-                              <img src="${img.dataUrl}" alt="Ref ${idx + 1}" />
+                            <div class="modix-ai-msg-ref-thumb" data-no-i18n="true" title="${escapeHtml(img.name)}">
+                              <img src="${img.dataUrl}" alt="${escapeHtml(img.name)}" />
                               <span class="ref-idx">#${idx + 1}</span>
                             </div>`
                             )
@@ -268,12 +320,12 @@ export class AIChatPanel {
                          </div>`
                       : ''
                   }
-                  <div class="modix-ai-msg-text">${formatSimpleMarkdown(m.content)}</div>
+                  <div class="modix-ai-msg-text" data-no-i18n="true">${formatSimpleMarkdown(m.content)}</div>
                   ${
                     m.agentSteps && m.agentSteps.length > 0
                       ? `<details class="modix-ai-steps-details">
-                          <summary>${Icons.check}<span>${m.agentSteps.length} etapa${m.agentSteps.length > 1 ? 's' : ''} executada${m.agentSteps.length > 1 ? 's' : ''}</span></summary>
-                          <div class="modix-ai-steps">
+                          <summary>${Icons.check}<span>${escapeHtml(tr(`${m.agentSteps.length} etapas executadas`))}</span></summary>
+                          <div class="modix-ai-steps" data-no-i18n="true">
                             ${m.agentSteps
                               .map(
                                 (s) =>
@@ -294,8 +346,8 @@ export class AIChatPanel {
             ? `<div class="modix-ai-live-status">
                 <div class="modix-ai-spinner"></div>
                 <div class="modix-ai-live-copy">
-                  <div class="live-badge">${escapeHtml(liveBadge || (isAgent ? 'Agente 3D' : 'IA'))}</div>
-                  <div class="live-desc">${escapeHtml(liveStep || 'Processando...')}</div>
+                  <div class="live-badge" data-no-i18n="true">${escapeHtml(liveBadge || tr(isAgent ? 'Agente 3D' : 'IA'))}</div>
+                  <div class="live-desc">${escapeHtml(liveStep || tr('Processando...'))}</div>
                 </div>
                </div>`
             : ''
@@ -306,10 +358,10 @@ export class AIChatPanel {
         hasPendingRefs
           ? `<div class="modix-ai-ref-strip">
               <div class="modix-ai-ref-hdr">
-                <span>Referências (${this.pendingRefs.length}/${MAX_REFERENCE_IMAGES})</span>
+                <span>${escapeHtml(tr(`Referências (${this.pendingRefs.length}/${MAX_REFERENCE_IMAGES})`))}</span>
                 ${
                   !this.busy
-                    ? `<button type="button" class="modix-ai-ref-clear" id="ai-clear-refs">Limpar</button>`
+                    ? `<button type="button" class="modix-ai-ref-clear" id="ai-clear-refs">${escapeHtml(tr('Limpar'))}</button>`
                     : ''
                 }
               </div>
@@ -317,12 +369,12 @@ export class AIChatPanel {
                 ${this.pendingRefs
                   .map(
                     (ref, idx) => `
-                  <div class="modix-ai-ref-item" title="${escapeHtml(ref.name)}">
+                  <div class="modix-ai-ref-item" data-no-i18n="true" title="${escapeHtml(ref.name)}">
                     <img src="${ref.dataUrl}" alt="${escapeHtml(ref.name)}" />
                     <span class="modix-ai-ref-badge">#${idx + 1}</span>
                     ${
                       !this.busy
-                        ? `<button type="button" class="modix-ai-ref-rm" data-rm-ref="${escapeHtml(ref.id)}" title="Remover">${Icons.close}</button>`
+                        ? `<button type="button" class="modix-ai-ref-rm" data-rm-ref="${escapeHtml(ref.id)}" title="${escapeHtml(tr('Remover'))}">${Icons.close}</button>`
                         : ''
                     }
                   </div>`
@@ -330,7 +382,7 @@ export class AIChatPanel {
                   .join('')}
                 ${
                   !this.busy && this.pendingRefs.length < MAX_REFERENCE_IMAGES
-                    ? `<button type="button" class="modix-ai-ref-add-more" id="ai-btn-add-more-ref" title="Adicionar outra referência">
+                    ? `<button type="button" class="modix-ai-ref-add-more" id="ai-btn-add-more-ref" title="${escapeHtml(tr('Adicionar outra referência'))}">
                         ${Icons.plus}
                        </button>`
                     : ''
@@ -353,7 +405,7 @@ export class AIChatPanel {
           type="button"
           class="modix-ai-attach-btn ${hasPendingRefs ? 'has-refs' : ''}"
           id="ai-btn-attach-ref"
-          title="Anexar imagens de referência"
+          title="${escapeHtml(tr('Anexar imagens de referência'))}"
           ${this.busy ? 'disabled' : ''}
         >
           ${Icons.imagePlus}
@@ -364,18 +416,20 @@ export class AIChatPanel {
           type="text"
           id="ai-chat-input"
           value="${escapeHtml(this.draftText)}"
-          placeholder="${
-            hasPendingRefs
-              ? 'Detalhes opcionais ou envie direto...'
-              : isAgent
-                ? 'Descreva o modelo 3D...'
-                : 'Pergunte algo...'
-          }"
+          placeholder="${escapeHtml(
+            tr(
+              hasPendingRefs
+                ? 'Detalhes opcionais ou envie direto...'
+                : isAgent
+                  ? 'Descreva o modelo 3D...'
+                  : 'Pergunte algo...'
+            )
+          )}"
           autocomplete="off"
           ${this.busy ? 'disabled' : ''}
         />
 
-        <button type="submit" class="modix-ai-send-btn" ${this.busy ? 'disabled' : ''} title="Enviar">
+        <button type="submit" class="modix-ai-send-btn" ${this.busy ? 'disabled' : ''} title="${escapeHtml(tr('Enviar'))}">
           ${this.busy ? `<span class="modix-btn-spinner"></span>` : Icons.sendArrow}
         </button>
       </form>
@@ -427,11 +481,14 @@ export class AIChatPanel {
     this.panelEl.querySelector('#ai-btn-settings')?.addEventListener('click', () => {
       this.showSettings = !this.showSettings;
       this.render();
+      if (this.showSettings) {
+        void this.refreshModelCatalog();
+      }
     });
 
     this.panelEl.querySelector('#ai-quick-undo')?.addEventListener('click', () => {
       const ok = this.engine.undo();
-      this.showToast(ok ? 'Última ação 3D desfeita' : 'Nada para desfazer');
+      this.showToast(tr(ok ? 'Última ação 3D desfeita' : 'Nada para desfazer'));
     });
 
     this.panelEl.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((btn) => {
@@ -442,6 +499,13 @@ export class AIChatPanel {
       });
     });
 
+    this.panelEl
+      .querySelector<HTMLSelectElement>('#ai-model-select')
+      ?.addEventListener('change', (e) => {
+        const val = (e.target as HTMLSelectElement).value || 'auto';
+        setPreferredOpenRouterModel(val);
+      });
+
     this.panelEl.querySelector<HTMLInputElement>('#ai-chk-multi')?.addEventListener('change', (e) => {
       setMultiAIEnabled((e.target as HTMLInputElement).checked);
       this.render();
@@ -451,7 +515,7 @@ export class AIChatPanel {
       const keyInp = this.panelEl?.querySelector<HTMLInputElement>('#ai-key-input');
       if (keyInp && keyInp.value.trim()) {
         setCustomOpenRouterKey(keyInp.value.trim());
-        this.showToast('Chave personalizada OpenRouter salva.');
+        this.showToast(tr('Salvar'));
         this.showSettings = false;
         this.render();
       }
@@ -459,7 +523,6 @@ export class AIChatPanel {
 
     this.panelEl.querySelector('#ai-key-reset')?.addEventListener('click', () => {
       setCustomOpenRouterKey('');
-      this.showToast('Restaurada chave OpenRouter padrão');
       this.render();
     });
 
@@ -487,7 +550,7 @@ export class AIChatPanel {
     const displayPrompt =
       prompt ||
       (attachedRefs.length > 0
-        ? `Replicar fielmente em 3D (${attachedRefs.length} imagem${attachedRefs.length > 1 ? 'ns' : ''} de referência)`
+        ? `${tr('Referências')} (${attachedRefs.length})`
         : '');
     if (!displayPrompt) return;
 
@@ -503,14 +566,8 @@ export class AIChatPanel {
 
     this.busy = true;
     this.render(
-      activeMode === 'agente'
-        ? attachedRefs.length > 0
-          ? 'Analisando Referências'
-          : 'Agente 3D'
-        : 'IA',
-      attachedRefs.length > 0
-        ? `Lendo ${attachedRefs.length} imagem(ns) de referência...`
-        : 'Conectando...'
+      activeMode === 'agente' ? tr('Agente 3D') : tr('IA'),
+      tr('Conectando...')
     );
 
     try {
@@ -537,7 +594,7 @@ export class AIChatPanel {
           content: res.reply,
           agentSteps: res.steps
         });
-        this.showToast('Cena 3D atualizada pelo Agente.');
+        this.showToast(tr('Cena 3D atualizada pelo Agente.'));
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -547,7 +604,7 @@ export class AIChatPanel {
       this.history.push({
         role: 'assistant',
         mode: activeMode,
-        content: `**Erro**: ${msg}`
+        content: `**Error**: ${msg}`
       });
     } finally {
       this.busy = false;

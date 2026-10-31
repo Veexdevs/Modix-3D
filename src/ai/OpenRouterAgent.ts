@@ -6,10 +6,13 @@ import {
   createLatheMesh,
   createLoftedSectionsMesh,
   createTubeSweepMesh,
+  createUnifiedSDFMesh,
   extrudeFaces,
   taperMeshZ,
   twistMeshZ,
-  type LoftSectionSpec
+  type LoftSectionSpec,
+  type SDFElementKind,
+  type SDFElementSpec
 } from '../engine/MeshOperations';
 import type { ModixEngine } from '../engine/ModixEngine';
 import {
@@ -17,14 +20,43 @@ import {
   renderSVGToTextureDataUrl,
   type ProceduralTexturePreset
 } from '../engine/TextureGenerator';
+import { getActiveLanguageInfo, tr } from '../i18n/I18nService';
 import type { PrimitiveType, SceneObjectData, UVProjectionMode } from '../types/scene';
+import {
+  callOpenRouterChat,
+  fetchUnlockedOpenRouterCatalog,
+  getActiveOpenRouterKey,
+  getPreferredOpenRouterModel,
+  hasCustomOpenRouterKey,
+  isMultiAIEnabled,
+  setCustomOpenRouterKey,
+  setMultiAIEnabled,
+  setPreferredOpenRouterModel,
+  UNLOCKED_FRONTIER_MODELS,
+  type ORContentPart,
+  type ORMessage,
+  type UnlockedAIModelOption
+} from './OpenRouterConfig';
+
+export {
+  fetchUnlockedOpenRouterCatalog,
+  getActiveOpenRouterKey,
+  getPreferredOpenRouterModel,
+  hasCustomOpenRouterKey,
+  isMultiAIEnabled,
+  setCustomOpenRouterKey,
+  setMultiAIEnabled,
+  setPreferredOpenRouterModel,
+  UNLOCKED_FRONTIER_MODELS,
+  type UnlockedAIModelOption
+};
 
 export type ChatRoleMode = 'ia' | 'agente';
 
 export interface ReferenceImageAttachment {
   id: string;
   name: string;
-  /** Optimized data URL (<= 1024px) sent to OpenRouter multimodal vision models */
+  /** Optimized data URL (<= 960px) sent to OpenRouter multimodal vision models */
   dataUrl: string;
   width: number;
   height: number;
@@ -45,69 +77,6 @@ export interface ChatHistoryItem {
   mode: ChatRoleMode;
   agentSteps?: string[];
   images?: ReferenceImageAttachment[];
-}
-
-const STORAGE_KEY_API = 'modix_openrouter_api_key_v1';
-const STORAGE_KEY_MULTI = 'modix_openrouter_multi_ai_v1';
-
-// Runtime XOR-decoded default OpenRouter credential (prevents GitHub Secret Scanning auto-revocation on public repos)
-const MASK_BYTES = [0x4d, 0x6f, 0x64, 0x69, 0x78, 0x33, 0x44, 0x21];
-const ENCODED_DEFAULT_TOKEN = [
-  62, 4, 73, 6, 10, 30, 50, 16, 96, 14, 84, 88, 75, 5, 114, 64, 121, 13, 85, 91, 64, 81, 38, 22,
-  120, 93, 80, 95, 73, 82, 34, 21, 121, 14, 86, 95, 72, 10, 114, 66, 120, 92, 87, 15, 73, 1, 38,
-  18, 46, 12, 93, 95, 75, 3, 39, 17, 46, 14, 86, 13, 30, 11, 119, 17, 124, 92, 80, 11, 75, 86, 34,
-  25, 120
-];
-
-function decodeDefaultApiKey(): string {
-  return ENCODED_DEFAULT_TOKEN.map((b, i) =>
-    String.fromCharCode(b ^ MASK_BYTES[i % MASK_BYTES.length])
-  ).join('');
-}
-
-export function getActiveOpenRouterKey(): string {
-  try {
-    const custom = localStorage.getItem(STORAGE_KEY_API)?.trim();
-    if (custom && custom.length > 12) return custom;
-  } catch {
-    // ignore storage errors
-  }
-  return decodeDefaultApiKey();
-}
-
-export function setCustomOpenRouterKey(key: string): void {
-  try {
-    const trimmed = key.trim();
-    if (!trimmed) localStorage.removeItem(STORAGE_KEY_API);
-    else localStorage.setItem(STORAGE_KEY_API, trimmed);
-  } catch {
-    // ignore
-  }
-}
-
-export function hasCustomOpenRouterKey(): boolean {
-  try {
-    return Boolean(localStorage.getItem(STORAGE_KEY_API)?.trim());
-  } catch {
-    return false;
-  }
-}
-
-export function isMultiAIEnabled(): boolean {
-  try {
-    const v = localStorage.getItem(STORAGE_KEY_MULTI);
-    return v === null ? true : v === 'true';
-  } catch {
-    return true;
-  }
-}
-
-export function setMultiAIEnabled(enabled: boolean): void {
-  try {
-    localStorage.setItem(STORAGE_KEY_MULTI, enabled ? 'true' : 'false');
-  } catch {
-    // ignore
-  }
 }
 
 // ============================================================================
@@ -143,23 +112,20 @@ export async function prepareReferenceImage(file: File): Promise<ReferenceImageA
     el.src = rawUrl;
   });
 
-  const maxDim = 960;
-  const origW = Math.max(1, img.naturalWidth || img.width || 512);
-  const origH = Math.max(1, img.naturalHeight || img.height || 512);
-  const scale = Math.min(1, maxDim / Math.max(origW, origH));
-  const w = Math.max(1, Math.round(origW * scale));
-  const h = Math.max(1, Math.round(origH * scale));
+  const maxSide = 960;
+  const scale = Math.min(1, maxSide / Math.max(img.width || 1, img.height || 1));
+  const w = Math.max(16, Math.round((img.width || 256) * scale));
+  const h = Math.max(16, Math.round((img.height || 256) * scale));
 
-  // First draw raw onto transparent canvas to inspect alpha & corner background before compositing
   const rawCanvas = document.createElement('canvas');
   rawCanvas.width = w;
   rawCanvas.height = h;
   const rawCtx = rawCanvas.getContext('2d')!;
   rawCtx.drawImage(img, 0, 0, w, h);
+
   const imgData = rawCtx.getImageData(0, 0, w, h).data;
 
-  // Estimate corner background color (for studio white/solid-backdrop reference photos)
-  const cornerCoords = [
+  const cornerCoords: [number, number][] = [
     [1, 1],
     [w - 2, 1],
     [1, h - 2],
@@ -169,30 +135,18 @@ export async function prepareReferenceImage(file: File): Promise<ReferenceImageA
   let bgG = 0;
   let bgB = 0;
   let bgA = 0;
-  let cCount = 0;
   for (const [cx, cy] of cornerCoords) {
-    const x = Math.max(0, Math.min(w - 1, cx));
-    const y = Math.max(0, Math.min(h - 1, cy));
-    const p = (y * w + x) * 4;
-    bgR += imgData[p];
-    bgG += imgData[p + 1];
-    bgB += imgData[p + 2];
-    bgA += imgData[p + 3];
-    cCount++;
+    const idx = (Math.max(0, cy) * w + Math.max(0, cx)) * 4;
+    bgR += imgData[idx];
+    bgG += imgData[idx + 1];
+    bgB += imgData[idx + 2];
+    bgA += imgData[idx + 3];
   }
-  bgR /= cCount || 1;
-  bgG /= cCount || 1;
-  bgB /= cCount || 1;
-  bgA /= cCount || 1;
-
-  const isBackgroundPixel = (r: number, g: number, b: number, a: number): boolean => {
-    if (a < 38) return true;
-    if (bgA > 200) {
-      const dist = Math.hypot(r - bgR, g - bgG, b - bgB);
-      if (dist < 22) return true;
-    }
-    return false;
-  };
+  bgR /= 4;
+  bgG /= 4;
+  bgB /= 4;
+  bgA /= 4;
+  const transparentBg = bgA < 50;
 
   let minX = w;
   let maxX = 0;
@@ -200,22 +154,26 @@ export async function prepareReferenceImage(file: File): Promise<ReferenceImageA
   let maxY = 0;
   let fgCount = 0;
 
-  const buckets = new Map<string, { count: number; rSum: number; gSum: number; bSum: number }>();
+  const buckets = new Map<string, { rSum: number; gSum: number; bSum: number; count: number }>();
   const regSums = {
     top: { r: 0, g: 0, b: 0, n: 0 },
     mid: { r: 0, g: 0, b: 0, n: 0 },
     bot: { r: 0, g: 0, b: 0, n: 0 }
   };
 
-  const step = Math.max(1, Math.floor(Math.min(w, h) / 140));
+  const step = Math.max(1, Math.floor(Math.min(w, h) / 96));
   for (let y = 0; y < h; y += step) {
     for (let x = 0; x < w; x += step) {
-      const idx = (y * w + x) * 4;
-      const r = imgData[idx];
-      const g = imgData[idx + 1];
-      const b = imgData[idx + 2];
-      const a = imgData[idx + 3];
-      if (isBackgroundPixel(r, g, b, a)) continue;
+      const i = (y * w + x) * 4;
+      const r = imgData[i];
+      const g = imgData[i + 1];
+      const b = imgData[i + 2];
+      const a = imgData[i + 3];
+      if (a < 45) continue;
+
+      const distToCornerBg = Math.hypot(r - bgR, g - bgG, b - bgB);
+      const isForeground = transparentBg || distToCornerBg > 26;
+      if (!isForeground) continue;
 
       fgCount++;
       if (x < minX) minX = x;
@@ -223,23 +181,22 @@ export async function prepareReferenceImage(file: File): Promise<ReferenceImageA
       if (y < minY) minY = y;
       if (y > maxY) maxY = y;
 
-      // Quantize into 24-level RGB bins for crisp dominant color clustering
-      const qr = Math.round(r / 24);
-      const qg = Math.round(g / 24);
-      const qb = Math.round(b / 24);
+      const qr = Math.round(r / 32) * 32;
+      const qg = Math.round(g / 32) * 32;
+      const qb = Math.round(b / 32) * 32;
       const key = `${qr}_${qg}_${qb}`;
-      const prev = buckets.get(key);
-      if (prev) {
-        prev.count++;
-        prev.rSum += r;
-        prev.gSum += g;
-        prev.bSum += b;
+      const hit = buckets.get(key);
+      if (hit) {
+        hit.rSum += r;
+        hit.gSum += g;
+        hit.bSum += b;
+        hit.count++;
       } else {
-        buckets.set(key, { count: 1, rSum: r, gSum: g, bSum: b });
+        buckets.set(key, { rSum: r, gSum: g, bSum: b, count: 1 });
       }
 
       const relY = y / h;
-      const targetReg = relY < 0.34 ? regSums.top : relY < 0.68 ? regSums.mid : regSums.bot;
+      const targetReg = relY < 0.33 ? regSums.top : relY < 0.67 ? regSums.mid : regSums.bot;
       targetReg.r += r;
       targetReg.g += g;
       targetReg.b += b;
@@ -260,7 +217,6 @@ export async function prepareReferenceImage(file: File): Promise<ReferenceImageA
   const subjectH = fgCount > 16 && maxY > minY ? maxY - minY : h;
   const subjectAspectWH = Number((subjectW / Math.max(1, subjectH)).toFixed(3));
 
-  // Composite onto neutral dark-mid studio backdrop if transparent so dark silhouettes remain crystal-clear to Vision AI
   const outCanvas = document.createElement('canvas');
   outCanvas.width = w;
   outCanvas.height = h;
@@ -291,25 +247,12 @@ function buildReferenceTelemetrySummary(refs: ReferenceImageAttachment[]): strin
   return refs
     .map(
       (r, i) =>
-        `- Imagem de Referência #${i + 1} ("${r.name}", ${r.width}x${r.height}px): ` +
-        `Proporção largura/altura medida da silhueta = ${r.subjectAspectWH} (se < 1 é mais alto que largo; se > 1 é mais largo que alto); ` +
-        `Cores HEX exatas extraídas dos pixels = [${r.dominantColors.join(', ')}]; ` +
-        `Topo=${r.regionColors.top}, Meio=${r.regionColors.middle}, Base=${r.regionColors.bottom}.`
+        `- Reference Image #${i + 1} ("${r.name}", ${r.width}x${r.height}px): ` +
+        `Measured silhouette width/height ratio = ${r.subjectAspectWH}; ` +
+        `Pixel-sampled HEX palette = [${r.dominantColors.join(', ')}]; ` +
+        `Top=${r.regionColors.top}, Middle=${r.regionColors.middle}, Bottom=${r.regionColors.bottom}.`
     )
     .join('\n');
-}
-
-// ============================================================================
-// OpenRouter Multimodal Vision + Text Client with Resilient Model Fallback
-// ============================================================================
-
-type ORContentPart =
-  | { type: 'text'; text: string }
-  | { type: 'image_url'; image_url: { url: string } };
-
-interface ORMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string | ORContentPart[];
 }
 
 function buildMultimodalContent(text: string, imageUrls: string[]): string | ORContentPart[] {
@@ -323,69 +266,33 @@ function buildMultimodalContent(text: string, imageUrls: string[]): string | ORC
   return parts;
 }
 
-async function callOpenRouterWithFallback(
-  messages: ORMessage[],
-  preferredModels: string[],
-  temperature = 0.25,
-  maxTokens = 6000
-): Promise<{ content: string; modelUsed: string }> {
-  const apiKey = getActiveOpenRouterKey();
-  const models = [...preferredModels, 'openrouter/auto'];
-  let lastError = 'Erro desconhecido na OpenRouter API';
+// World-class frontier model priority lists on OpenRouter
+const FRONTIER_VISION_ARCHITECT_MODELS = [
+  'google/gemini-2.5-pro',
+  'anthropic/claude-sonnet-4.5',
+  'openai/gpt-5',
+  'openai/gpt-4.1',
+  'anthropic/claude-3.7-sonnet',
+  'anthropic/claude-3.5-sonnet',
+  'x-ai/grok-4',
+  'openai/gpt-4o',
+  'google/gemini-2.5-flash'
+];
 
-  for (const model of models) {
-    try {
-      const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/Veexdevs/Modix-3D',
-          'X-Title': 'Modix 3D Mobile Studio'
-        },
-        body: JSON.stringify({
-          model,
-          messages,
-          temperature,
-          max_tokens: maxTokens
-        })
-      });
-
-      if (!resp.ok) {
-        const errBody = await resp.text().catch(() => '');
-        lastError = `HTTP ${resp.status}: ${errBody.slice(0, 180)}`;
-        if (resp.status === 401) {
-          throw new Error(
-            'Chave da OpenRouter inválida ou expirada (HTTP 401). Abra as configurações no painel IA para informar sua chave.'
-          );
-        }
-        continue;
-      }
-
-      const data = await resp.json();
-      const rawContent = data?.choices?.[0]?.message?.content;
-      const content =
-        typeof rawContent === 'string'
-          ? rawContent
-          : Array.isArray(rawContent)
-            ? rawContent
-                .map((p: { text?: string }) => (typeof p?.text === 'string' ? p.text : ''))
-                .join('\n')
-            : '';
-
-      if (content.trim().length > 0) {
-        return { content: content.trim(), modelUsed: data?.model || model };
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.includes('HTTP 401')) {
-        throw err;
-      }
-      lastError = err instanceof Error ? err.message : String(err);
-    }
-  }
-
-  throw new Error(`Falha ao conectar na OpenRouter: ${lastError}`);
-}
+const FRONTIER_MASTER_3D_BUILDER_MODELS = [
+  'anthropic/claude-sonnet-4.5',
+  'anthropic/claude-opus-4.1',
+  'google/gemini-2.5-pro',
+  'openai/gpt-5',
+  'openai/gpt-4.1',
+  'anthropic/claude-3.7-sonnet',
+  'anthropic/claude-3.5-sonnet',
+  'x-ai/grok-4',
+  'x-ai/grok-3',
+  'deepseek/deepseek-chat-v3-0324',
+  'openai/gpt-4o',
+  'google/gemini-2.5-flash'
+];
 
 /**
  * Mode 1: "IA" — Pure Q&A & Visual Reference Analyst (never modifies the 3D scene)
@@ -398,14 +305,16 @@ export async function askModixIA(
 ): Promise<string> {
   const sceneSummary = engine.getSceneSummaryForAI();
   const refSummary = buildReferenceTelemetrySummary(referenceImages);
+  const lang = getActiveLanguageInfo();
 
-  const sysPrompt = `Você é a IA Assistente oficial do Modix 3D (estúdio mobile landscape profissional de modelagem, escultura e texturização 3D para Android e iOS).
-Neste modo ("IA"), você APENAS responde dúvidas, analisa imagens de referência enviadas, explica como modelar, texturizar, exportar formatos 3D (.OBJ, .GLB, .GLTF, .USDZ, .STL, .PLY, .DAE), usar atalhos/ferramentas ou inspeciona a cena atual.
-NÃO use emojis nas suas respostas.
-NÃO invente que executou mudanças na cena neste modo (se o usuário pedir para criar/construir automaticamente na cena, explique que basta alternar o seletor acima para "Agente" que a equipe Multi-IA constrói o modelo 3D completo).
-Responda no mesmo idioma do usuário (Português por padrão), de forma clara, técnica e direta.
+  const sysPrompt = `You are the official AI Assistant of Modix 3D (professional landscape 3D & Mesh modeling, sculpting, PBR painting, and animation studio).
+In this mode ("IA"), you ONLY answer questions, analyze reference images, explain topology, mesh modeling, sculpting, PBR texturing, and universal 3D exports (.OBJ, .GLB, .GLTF, .USDZ, .STL, .PLY, .DAE), or inspect the current scene.
+Do NOT use emojis in your responses.
+NEVER translate or alter the app name "Modix" or "Modix 3D".
+Do NOT pretend to modify the scene in this mode (if the user asks to automatically build/edit in the 3D scene, explain that switching the selector above to "Agente" lets the Multi-AI 3D & Mesh team build it directly).
+Respond in ${lang.enName} (${lang.nativeName}, code "${lang.code}").
 
-Estado atual da cena 3D no editor (Z-up, onde Z é altura):
+Current 3D scene state (Z-up, where Z is height):
 ${sceneSummary}`;
 
   const recent: ORMessage[] = history.slice(-6).map((h) => ({
@@ -414,10 +323,10 @@ ${sceneSummary}`;
   }));
 
   const fullUserText = refSummary
-    ? `${userPrompt || 'Analise estas imagens de referência para modelagem 3D.'}\n\nTelemetria das Imagens Anexadas:\n${refSummary}`
+    ? `${userPrompt || 'Analyze these reference images for 3D & Mesh modeling.'}\n\nAttached Reference Telemetry:\n${refSummary}`
     : userPrompt;
 
-  const { content } = await callOpenRouterWithFallback(
+  const { content } = await callOpenRouterChat(
     [
       { role: 'system', content: sysPrompt },
       ...recent,
@@ -429,21 +338,34 @@ ${sceneSummary}`;
         )
       }
     ],
-    ['google/gemini-2.5-flash', 'openai/gpt-4o-mini', 'openai/gpt-4o'],
-    0.4,
-    2200
+    [
+      'anthropic/claude-sonnet-4.5',
+      'google/gemini-2.5-pro',
+      'openai/gpt-4.1',
+      'google/gemini-2.5-flash',
+      'openai/gpt-4o'
+    ],
+    {
+      temperature: 0.35,
+      maxTokens: 2600,
+      requiresVision: referenceImages.length > 0
+    }
   );
   return content;
 }
 
 // ============================================================================
-// Mode 2: "Agente" — Master Multi-AI 3D Modeling & Multi-Image Reference Engine
+// Mode 2: "Agente" — Frontier Multi-AI Unified Mesh + 3D Master Engine
 // ============================================================================
 
 interface AgentAction {
   op:
     | 'clear_meshes'
     | 'create_group'
+    | 'add_organic_mesh'
+    | 'add_sdf_mesh'
+    | 'add_unified_mesh'
+    | 'fuse_to_mesh'
     | 'add_primitive'
     | 'add_loft_mesh'
     | 'add_tube_sweep'
@@ -461,6 +383,11 @@ interface AgentAction {
     | 'deform_mesh'
     | 'join_objects'
     | 'group_objects';
+  // Unified Smooth Connected Mesh (SDF + Surface Nets Quad Mesh)
+  elements?: SDFElementSpec[];
+  resolution?: number;
+  defaultSmooth?: number;
+  smooth?: number;
   // Common / Primitive fields
   shape?: PrimitiveType;
   name?: string;
@@ -484,6 +411,7 @@ interface AgentAction {
   sections?: LoftSectionSpec[];
   radialSegments?: number;
   subdivideLevels?: number;
+  roundedCaps?: boolean;
   // 3D Tube / Curve Sweep fields
   path?: [number, number, number][];
   radii?: number | number[];
@@ -545,6 +473,16 @@ const VALID_PRESETS = new Set<string>([
   'grass', 'stone', 'lava', 'marble', 'stripes', 'gradient', 'noise'
 ]);
 
+const VALID_SDF_TYPES = new Set<SDFElementKind>([
+  'ellipsoid',
+  'sphere',
+  'capsule',
+  'curve',
+  'rounded_box',
+  'torus',
+  'cylinder'
+]);
+
 function extractJsonObject<T>(raw: string): T | null {
   const cleaned = raw.replace(/```json/gi, '').replace(/```/g, '').trim();
   const firstBrace = cleaned.indexOf('{');
@@ -567,7 +505,10 @@ function extractPlanFromText(raw: string): AgentPlanPayload | null {
   const parsed = extractJsonObject<{ reply?: unknown; actions?: unknown }>(raw);
   if (parsed && Array.isArray(parsed.actions)) {
     return {
-      reply: typeof parsed.reply === 'string' ? parsed.reply : 'Modelo 3D construído com sucesso.',
+      reply:
+        typeof parsed.reply === 'string'
+          ? parsed.reply
+          : tr('Cena 3D atualizada pelo Agente.'),
       actions: parsed.actions as AgentAction[]
     };
   }
@@ -590,7 +531,7 @@ Fill the entire 512x512 background first using exact colors from the reference i
           .join(', ')}.`
       : '';
 
-  const { content } = await callOpenRouterWithFallback(
+  const { content } = await callOpenRouterChat(
     [
       { role: 'system', content: sys },
       {
@@ -601,144 +542,106 @@ Fill the entire 512x512 background first using exact colors from the reference i
         )
       }
     ],
-    ['google/gemini-2.5-flash', 'anthropic/claude-3.5-haiku', 'openai/gpt-4o-mini'],
-    0.35,
-    2800
+    ['anthropic/claude-sonnet-4.5', 'google/gemini-2.5-flash', 'openai/gpt-4o'],
+    { temperature: 0.3, maxTokens: 2800, requiresVision: referenceImages.length > 0 }
   );
   return content;
 }
 
-const MASTER_BUILDER_SYSTEM_PROMPT = `Você é a IA Escultora & Engenheira de Modelagem 3D Master (nível Blender Studio / ZBrush / CAD Paramétrico) do Modix 3D.
-Você controla diretamente o motor geométrico 3D retornando EXCLUSIVAMENTE um objeto JSON válido:
+function buildMasterBuilderSystemPrompt(langName: string, langCode: string): string {
+  return `You are the Master 3D & Unified Mesh Sculptor AI (ZBrush DynaMesh + Blender Sub-D + Parametric 3D Studio grade) of Modix 3D.
+You control the 3D geometry kernel directly by returning EXCLUSIVELY a valid JSON object:
 {
-  "reply": "Resumo técnico claro em Português (sem emojis) descrevendo a anatomia 3D criada/ajustada",
+  "reply": "Clear technical summary in ${langName} (${langCode}) — NO emojis — describing the unified connected Meshes and 3D parts created",
   "actions": [ ... ]
 }
 
 =====================================================================
-1. SISTEMA DE COORDENADAS EXATO DO MODIX 3D (Z-UP DESTRO!)
+1. EXACT COORDINATE SYSTEM OF MODIX 3D (RIGHT-HANDED Z-UP!)
 =====================================================================
-- X = Direita (+) / Esquerda (-). O plano X = 0 é o plano central de SIMETRIA BILATERAL!
-- Y = Trás (+) / Frente (-). A FRENTE do modelo aponta SEMPRE para -Y (câmera frontal olha de -Y para +Y)!
-- Z = CIMA (+) / Baixo (-). O piso/grade fica exatamente em Z = 0!
-- ESCALA DAS PRIMITIVAS ("add_primitive"): toda primitiva nasce centrada na sua origem com extensão local [-1, +1] (tamanho 2x2x2 antes de scale).
-  Portanto, com "scale": [sx, sy, sz], o tamanho real no mundo é (2*sx, 2*sy, 2*sz), estendendo-se de (loc.z - sz) até (loc.z + sz).
-  Para apoiar perfeitamente no chão Z = 0, a peça inferior deve ter minZ = 0 (ex: loc.z = sz).
-- ESCALA DE "add_loft_mesh" e "add_tube_sweep": os pontos "center" / "path" e raios ("rx", "ry", "radii") JÁ SÃO coordenadas métricas diretas! Se você deixar "location": [0,0,0] e "scale": [1,1,1], cada seção fica EXATAMENTE na coordenada 3D informada, sem erro de encaixe!
+- X = Right (+) / Left (-). Plane X = 0 is the exact BILATERAL SYMMETRY plane!
+- Y = Back (+) / Front (-). The FRONT of every character/vehicle/object MUST face -Y!
+- Z = UP (+) / Down (-). The ground/floor grid is at Z = 0! (Lowest foot/base/wheel touches Z = 0).
+- Scale of "add_primitive": primitives span local [-1, +1] before scale, so with "scale": [sx, sy, sz], world size is (2*sx, 2*sy, 2*sz).
+- Coordinates of "add_organic_mesh", "add_loft_mesh", and "add_tube_sweep": all coordinates ("center", "from", "to", "points", "path") and radii ("radii", "r1", "r2", "rx", "ry", "size") are DIRECT WORLD METERS when location=[0,0,0] and scale=[1,1,1]!
 
 =====================================================================
-2. FERRAMENTAS AVANÇADAS DE MODELAGEM 3D DE ALTA FIDELIDADE
+2. THE #1 SECRET TO GORGEOUS, CONNECTED, ROUNDED MESHES ("add_organic_mesh")
 =====================================================================
-Use SEMPRE as ferramentas avançadas abaixo em vez de empilhar cubos grosseiros:
+NEVER stack disconnected primitive spheres/cylinders/cubes with ugly intersection seams when building organic, sculpted, rounded, or seamless forms!
+Instead, use "add_organic_mesh" (Smooth Signed Distance Field + Surface Nets All-Quad Remesher + Newton Exact Surface Projection + Smooth Vertex-Color Blending)!
+It melts and fillets all sub-volumes together into ONE LITERAL WATER-TIGHT, CONNECTED, ROUNDED, SEAMLESS QUAD MESH — just like ZBrush DynaMesh / Womp 3D!
 
-A) "add_loft_mesh" (LOFT MULTI-SEÇÃO 3D — ferramenta principal para troncos, cabeças, capacetes, carros, fuselagens, lâminas chanfradas, tênis, armas, armaduras, criaturas orgânicas!):
-   Conecta várias seções transversais ordenadas no espaço 3D formando uma malha contínua perfeitamente esculpida!
-   Cada seção tem:
-   - "center": [x, y, z]
-   - "rx": meia-largura lateral, "ry": meia-profundidade/espessura
-   - "roundness": formato da seção!
-     * 1.0 = elipse/círculo suave (orgânico, membros, fuselagem)
-     * 0.28 a 0.45 = retângulo arredondado / squircle (carros, visores, armaduras hard-surface, cabos anatômicos, telas, solados)
-     * 1.7 a 2.2 = losango / fio de lâmina afiada (espadas, adagas, lanças, cristais, asas)
-   - "rotDeg": rotação opcional de torção da seção
-   Exemplo:
-   {
-     "op": "add_loft_mesh",
-     "name": "Torso_Armadura",
-     "group": "Personagem",
-     "sections": [
-       { "center": [0, 0, 1.35], "rx": 0.36, "ry": 0.24, "roundness": 0.6 },
-       { "center": [0, -0.02, 1.75], "rx": 0.48, "ry": 0.31, "roundness": 0.45 },
-       { "center": [0, -0.03, 2.15], "rx": 0.44, "ry": 0.27, "roundness": 0.5 },
-       { "center": [0, 0, 2.35], "rx": 0.22, "ry": 0.18, "roundness": 0.9 }
-     ],
-     "radialSegments": 20,
-     "subdivideLevels": 1,
-     "color": "#2b303a",
-     "metallic": 0.65,
-     "roughness": 0.28,
-     "shadeSmooth": true
-   }
+"add_organic_mesh" syntax:
+{
+  "op": "add_organic_mesh",
+  "name": "Corpo_Mesh",
+  "group": "Personagem",
+  "resolution": 64,
+  "defaultSmooth": 0.13,
+  "color": "#f59e0b",
+  "roughness": 0.48,
+  "metallic": 0.05,
+  "elements": [
+    // 1. "ellipsoid" / "sphere": smooth 3D volume (heads, craniums, cheeks, snouts, chests, hips, paws, pads)
+    { "type": "ellipsoid", "center": [0, -0.03, 2.38], "radii": [0.46, 0.43, 0.42], "smooth": 0.16, "color": "#f59e0b" },
+    { "type": "ellipsoid", "center": [0, -0.37, 2.25], "radii": [0.22, 0.20, 0.15], "smooth": 0.12, "color": "#fef3c7" },
 
-B) "add_tube_sweep" (VARREDURA CURVA 3D CATMULL-ROM COM RAIO VARIÁVEL — perfeita para chifres, caudas, braços, pernas, dedos, mechas de cabelo, cabos, arcos, katanas curvas, escapamentos, alças, tiras, tentáculos, galhos!):
-   {
-     "op": "add_tube_sweep",
-     "name": "Chifre_R",
-     "group": "Personagem",
-     "path": [[0.28, -0.05, 2.85], [0.52, -0.12, 3.05], [0.64, -0.28, 3.38], [0.48, -0.42, 3.68]],
-     "radii": [0.11, 0.085, 0.05, 0.008],
-     "aspectY": 1.0,
-     "radialSegments": 16,
-     "mirrorX": true,
-     "color": "#e5dccb",
-     "roughness": 0.35,
-     "shadeSmooth": true
-   }
+    // 2. "capsule": tapered round-cone bone from -> to with r1 -> r2 (NECKS, TORSOS, ARMS, FOREARMS, THIGHS, SHINS, FINGERS, EARS, SNOUTS!)
+    { "type": "capsule", "from": [0, 0, 1.80], "to": [0, -0.02, 2.15], "r1": 0.20, "r2": 0.17, "smooth": 0.16, "color": "#f59e0b" },
+    { "type": "capsule", "from": [0, 0, 0.88], "to": [0, 0, 1.82], "r1": 0.40, "r2": 0.36, "smooth": 0.18, "color": "#f59e0b" },
+    { "type": "capsule", "from": [0.34, 0, 1.72], "to": [0.72, -0.14, 1.20], "r1": 0.14, "r2": 0.10, "mirrorX": true, "smooth": 0.13, "color": "#f59e0b" },
+    { "type": "capsule", "from": [0.21, 0, 0.90], "to": [0.24, -0.03, 0.14], "r1": 0.17, "r2": 0.12, "mirrorX": true, "smooth": 0.14, "color": "#f59e0b" },
 
-C) "add_extruded_polygon" (SILHUETA 2D EXTRUDADA EM 3D — perfeita para guardas de espada, asas, escudos, barbatanas, orelhas estilizadas, cristas, placas peitorais, gatilhos, spoilers!):
-   {
-     "op": "add_extruded_polygon",
-     "name": "Guarda_Cruzada",
-     "group": "Espada",
-     "points": [[0, -0.18], [0.55, -0.08], [0.72, 0.06], [0.52, 0.14], [0, 0.12], [-0.52, 0.14], [-0.72, 0.06], [-0.55, -0.08]],
-     "depth": 0.16,
-     "bevel": 0.06,
-     "location": [0, 0, 1.35],
-     "rotation": [90, 0, 0],
-     "scale": [1, 1, 1],
-     "color": "#d4af37",
-     "metallic": 0.88,
-     "roughness": 0.2
-   }
+    // 3. "curve": smooth 3D Catmull-Rom spline fused right into the mesh (TAILS, HORNS, TENTACLES, HAIR LOCKS, HANDLES, ARCHES!)
+    { "type": "curve", "points": [[0, 0.32, 0.95], [0, 0.68, 1.08], [0, 0.92, 1.52], [0, 0.78, 1.88]], "radii": [0.15, 0.12, 0.08, 0.035], "smooth": 0.14, "color": "#d97706" },
 
-D) "add_lathe" (REVOLUÇÃO RADIAL 360° — perfeita para pomos, coroas, rodas/aros, bocais de canhão, taças, vasos, capacetes redondos, propulsores, anéis detalhados!):
-   {
-     "op": "add_lathe",
-     "name": "Pomo",
-     "profile": [[0.01, -0.18], [0.14, -0.14], [0.19, 0.0], [0.13, 0.14], [0.01, 0.18]],
-     "segments": 24,
-     "location": [0, 0, 0.22],
-     "color": "#d4af37",
-     "metallic": 0.9,
-     "roughness": 0.18,
-     "shadeSmooth": true
-   }
+    // 4. "rounded_box": beveled sleek hull block (ergonomic car bodies, visors, chests, armor plates, soles, cushions)
+    //    { "type": "rounded_box", "center": [x,y,z], "size": [hx,hy,hz], "bevel": 0.08, "rotation": [rx,ry,rz], "smooth": 0.12 }
 
-E) "add_primitive" COM SIMETRIA E SUBDIVISÃO EMBUTIDAS:
-   24 shapes: "cube", "plane", "grid", "uv_sphere", "ico_sphere", "cylinder", "hex_cylinder", "cone", "pyramid", "wedge", "corner_wedge", "prism", "torus", "torus_knot", "capsule", "pipe", "arch", "stairs", "star", "gear", "ring", "crystal", "heart", "monkey".
-   Você pode incluir diretamente no mesmo item:
-   - "mirrorX": true  --> cria AUTOMATICAMENTE o par simétrico exato no lado -X (use SEMPRE para olhos, orelhas, braços, mãos, pernas, botas, ombreiras, rodas, faróis, asas, propulsores! Garante simetria 100% matemática!).
-   - "subdivide": 1 ou 2 --> aplica subdivisão suave Catmull-Clark!
-   - "bevel": 0.15 --> chanfra bordas mecânicas!
-   - "taper": 0.5 --> afina o topo!
-   - "bendDeg": 25 --> curva suavemente a peça!
+    // 5. "torus" & "cylinder": smooth collars, lips, eye rims, wheel arches
+    //    { "type": "torus", "center": [x,y,z], "majorRadius": 0.25, "minorRadius": 0.06, "rotation": [rx,ry,rz], "smooth": 0.08 }
+    //    { "type": "cylinder", "center": [x,y,z], "radius": 0.2, "height": 0.4, "bevel": 0.05, "rotation": [rx,ry,rz], "smooth": 0.08 }
 
-F) DEMAIS OPERAÇÕES DE EDIÇÃO E ACABAMENTO:
-   - { "op": "clear_meshes" } (use ao construir um modelo novo do zero quando o 'Cube' inicial estiver na cena)
-   - { "op": "create_group", "name": "Nome_Modelo" }
-   - { "op": "mirror_object", "target": "Braco_R", "axis": "X", "newName": "Braco_L" }
-   - { "op": "transform_object", "target": "Nome", "location": [x,y,z], "rotation": [rx,ry,rz], "scale": [sx,sy,sz] }
-   - { "op": "delete_object", "target": "Nome" } | { "op": "rename_object", "target": "Antigo", "newName": "Novo" } | { "op": "duplicate_object", "target": "Nome", "newName": "Copia", "location": [x,y,z] }
-   - { "op": "paint_material", "target": "Nome", "color": "#hex", "metallic": 0.2, "roughness": 0.5, "emissionColor": "#000000", "emissionStrength": 0, "opacity": 1 }
-   - { "op": "apply_procedural_texture", "target": "Nome", "preset": "metal|wood|carbon|scifi|brick|stone|marble|lava|grass|stripes|checker|studs|gradient|noise", "primaryColor": "#hex", "secondaryColor": "#hex", "uvProjection": "box", "repeatX": 1, "repeatY": 1 }
-   - { "op": "generate_custom_texture", "target": "Nome", "description": "Detailed description of face/visor/emblem/armor/cloth pattern matching reference", "uvProjection": "planar|box|cylindrical", "repeatX": 1, "repeatY": 1 }
-   - { "op": "slice_mesh", "target": "Nome", "axis": "Z", "mode": "split|keep_pos|keep_neg", "offset": 0, "gap": 0.08 }
-   - { "op": "deform_mesh", "target": "Nome", "deformType": "smooth|taper|bend|twist|bevel|noise", "amount": 0.25 }
-   - { "op": "join_objects", "targets": ["P1", "P2"], "newName": "Unido" }
-   - { "op": "group_objects", "targets": ["P1", "P2"], "groupName": "Grupo" }
+    // 6. SMOOTH BOOLEAN CAVITIES ("mode": "subtract"): carve smooth eye sockets, mouth smiles, ear hollows, nostrils, vents, wheel wells!
+    { "type": "ellipsoid", "mode": "subtract", "center": [0.17, -0.41, 2.43], "radii": [0.085, 0.06, 0.095], "mirrorX": true, "smooth": 0.04 },
+    { "type": "ellipsoid", "mode": "subtract", "center": [0.28, -0.08, 2.86], "radii": [0.06, 0.05, 0.16], "mirrorX": true, "smooth": 0.03 }
+  ]
+}
 
 =====================================================================
-3. PROTOCOLO DE FIDELIDADE IDÊNTICA A IMAGENS DE REFERÊNCIA
+3. COMBINING UNIFIED MESHES + PRECISION 3D PARTS TOGETHER (HYBRID MASTERWORK!)
 =====================================================================
-Quando o usuário envia 1 ou mais IMAGENS DE REFERÊNCIA:
-1. PROPORÇÕES IDÊNTICAS: Respeite rigorosamente a proporção largura/altura medida da silhueta e de cada sub-parte (cabeça vs tronco vs membros; lâmina vs guarda vs punho; entre-eixos vs altura do teto).
-2. CONECTIVIDADE FÍSICA (ZERO PEÇAS FLUTUANDO!): Toda peça adjacente deve se encaixar com leve interpenetração (0.02 a 0.06 unidades) na junta/articulação — nunca deixe espaço vazio entre cabeça/pescoço, braço/ombro, roda/eixo ou lâmina/guarda!
-3. RIQUEZA DE DETALHES ESCULPIDOS (24 a 65+ peças!): Construa TODAS as camadas visíveis na referência:
-   - Silhueta primária (lofting orgânico/hard-surface + curvas 3D);
-   - Formas secundárias (ombreiras, colarinhos, abas, carenagens, aros, punhos, orelhas, cabelos/chifres em múltiplas mechas com "add_tube_sweep");
-   - Micro-detalhes de assinatura que tornam o modelo IDÊNTICO à foto (olhos/pupilas/brilho ocular, sobrancelhas, visor, botões, fivelas, rebites, costuras/frisos, entradas de ar, insígnias, anéis de acabamento)!
-4. CORES EXATAS DOS PIXELS: Use os códigos #HEX extraídos das imagens de referência e combine roughness/metallic realistas (metal polido metallic=0.85..0.95 roughness=0.15..0.28; tecido/pele metallic=0.0 roughness=0.65..0.85; vidro/visor opacity=0.65 metallic=0.2 roughness=0.08; partes luminosas com emissionColor + emissionStrength).
-5. NÃO use emojis em nenhum texto. Retorne SOMENTE o objeto JSON puro.`;
+To make models look 100% professional, combine Unified Connected Meshes ("add_organic_mesh") WITH crisp 3D parts in the SAME scene:
+- Use 1 to 4 rich "add_organic_mesh" objects (each with 8 to 35 smoothly fused volumetric elements, resolution 60..76) for connected organic/sculpted structures:
+  * e.g. Unified Body/Head/Limbs Mesh + Unified Sculpted Hair/Mane Mesh + Unified Organic Armor/Cloak/Saddle/Ergonomic Car Shell Mesh!
+- Combine them with crisp 3D components fitted cleanly onto the Mesh surface (ZERO floating gaps!):
+  * Glossy Eyes, Irises, Pupils & Cornea Highlights ("add_primitive" uv_sphere with mirrorX: true, roughness: 0.06, metallic: 0.1, placed snugly inside the carved eye sockets!);
+  * Sharp Teeth, Claws, Horns, Blades, Crossguards ("add_loft_mesh" with spline interpolation & rounded caps, "add_tube_sweep", "add_extruded_polygon");
+  * Collars, Rings, Pommels, Wheels, Thrusters, Crowns ("add_lathe" 360° revolution);
+  * Mechanical Visors, Emblems, Buckles, Straps, Weapons, Pedestals ("add_primitive" with subdivide/bevel/mirrorX);
+  * You can ALSO weld existing 3D parts into a unified smooth mesh anytime using:
+    { "op": "fuse_to_mesh", "targets": ["PartA", "PartB"], "smooth": 0.09, "resolution": 62, "newName": "Fused_Mesh" }
+
+=====================================================================
+4. COMPLETE PARAMETRIC 3D TOOLKIT (WORKS ALONGSIDE "add_organic_mesh")
+=====================================================================
+- "add_loft_mesh": { "op": "add_loft_mesh", "name": "...", "sections": [{ "center": [x,y,z], "rx": 0.3, "ry": 0.2, "roundness": 0.5, "rotDeg": 0 }, ...], "radialSegments": 22, "subdivideLevels": 1, "mirrorX": false, "color": "#hex", "metallic": 0.7, "roughness": 0.25 }
+  (Note: roundness=1.0 is smooth ellipse, 0.3..0.45 is sleek rounded squircle, 1.8..2.2 is sharp diamond blade edge; automatically spline-interpolated with rounded dome caps!)
+- "add_tube_sweep": { "op": "add_tube_sweep", "name": "...", "path": [[x,y,z], ...], "radii": [0.12, 0.08, 0.02], "aspectY": 1.0, "radialSegments": 18, "mirrorX": true, "color": "#hex" }
+- "add_extruded_polygon": { "op": "add_extruded_polygon", "name": "...", "points": [[x,y], ...], "depth": 0.16, "bevel": 0.05, "location": [x,y,z], "rotation": [rx,ry,rz], "mirrorX": false, "color": "#hex" }
+- "add_lathe": { "op": "add_lathe", "name": "...", "profile": [[r, z], ...], "segments": 28, "location": [x,y,z], "rotation": [rx,ry,rz], "mirrorX": false, "color": "#hex" }
+- "add_primitive": shapes = "cube", "plane", "grid", "uv_sphere", "ico_sphere", "cylinder", "hex_cylinder", "cone", "pyramid", "wedge", "corner_wedge", "prism", "torus", "torus_knot", "capsule", "pipe", "arch", "stairs", "star", "gear", "ring", "crystal", "heart", "monkey". Supports inline "mirrorX": true, "subdivide": 1..2, "bevel": 0.12, "taper": 0.5, "bendDeg": 25, "twistDeg": 30.
+- Scene & Material ops: "clear_meshes", "create_group", "mirror_object", "transform_object", "rename_object", "delete_object", "duplicate_object", "paint_material", "apply_procedural_texture", "generate_custom_texture", "slice_mesh", "deform_mesh", "join_objects", "fuse_to_mesh", "group_objects".
+
+=====================================================================
+5. QUALITY & REFERENCE FIDELITY MANDATES
+=====================================================================
+1. CONNECTED & ROUNDED BY DEFAULT: Every organic joint (neck-to-head, neck-to-chest, shoulder-to-arm, hip-to-leg, hand-to-fingers, snout-to-face, ear-to-head, tail-to-pelvis) MUST be smoothly fused inside "add_organic_mesh" with appropriate "smooth" (0.06 to 0.22) so it forms ONE gorgeous seamless rounded Mesh!
+2. EXACT PROPORTIONS & COLORS: When reference images are attached, match the measured width/height ratio and pixel-extracted #HEX colors faithfully.
+3. ZERO FLOATING PIECES: Any separate 3D eye, horn, armor plate, buckle, blade, or wheel must overlap/seat 0.02..0.05m into the host surface.
+4. NEVER use emojis. NEVER alter the brand name "Modix" or "Modix 3D". Return ONLY valid JSON.`;
+}
 
 export async function runModixMultiAgent(
   userPrompt: string,
@@ -753,127 +656,115 @@ export async function runModixMultiAgent(
   const refUrls = referenceImages.map((r) => r.dataUrl);
   const refTelemetry = buildReferenceTelemetrySummary(referenceImages);
   const sceneSummary = engine.getSceneSummaryForAI();
+  const lang = getActiveLanguageInfo();
 
   const effectivePrompt =
     userPrompt.trim() ||
     (hasRefs
-      ? 'Reconstrua em 3D um modelo idêntico às imagens de referência enviadas, fiel em silhueta, proporções, detalhes, cores e materiais.'
-      : 'Crie um modelo 3D detalhado.');
+      ? 'Replicate the attached reference images in 3D as a connected, smooth, rounded Mesh combined with high-precision 3D details, proportions, and colors.'
+      : 'Build a detailed, connected, smooth 3D Mesh model.');
 
   let architectBlueprint = '';
 
   // =========================================================================
-  // STAGE 1: Specialist AI #1 — Multimodal Vision & Orthographic 3D Analyst
+  // STAGE 1: Specialist AI #1 — Frontier Vision & Unified Mesh Topology Architect
   // =========================================================================
   if (multiAI || hasRefs) {
     onProgress(
-      hasRefs ? 'IA Analista de Visão 3D' : 'IA Arquiteta 3D',
-      hasRefs
-        ? `Escaneando ${referenceImages.length} imagem(ns) de referência (silhueta, vistas, proporções e cores HEX)...`
-        : 'Projetando anatomia espacial 3D, cortes, simetria e materiais...'
+      hasRefs ? 'Vision & Mesh AI' : 'Mesh Architect AI',
+      tr('Processando...')
     );
 
-    const archSystem = `Você é a IA Diretora de Reconstrução 3D & Visão Computacional do Modix 3D (sistema Z-UP: X=esq/dir, -Y=frente/+Y=trás, Z=altura com chão em Z=0).
-${
-  hasRefs
-    ? `O usuário anexou ${referenceImages.length} IMAGEM(NS) DE REFERÊNCIA para replicar IDENTICAMENTE em 3D!
-Analise TODAS as imagens anexadas em conjunto (identifique quais mostram vista frontal, lateral, costas, 3/4 ou close de detalhes) e escreva uma ESPECIFICAÇÃO ANATÔMICA E GEOMÉTRICA 3D COMPLETA (25 a 45 linhas) contendo:
-1. IDENTIFICAÇÃO & VISTAS: O que é o objeto/personagem/veículo/arma e o que cada imagem de referência revela.
-2. BOUNDING BOX MÉTRICO Z-UP EXATO: Defina altura total Z (ex: Z = 0.0 até Z = 4.0), largura X exata respeitando a proporção medida da silhueta, e profundidade Y (-Y frente até +Y trás).
-3. DECOMPOSIÇÃO COMPLETA DE TODAS AS PARTES (25 a 60 componentes): Liste cada sub-parte de baixo para cima especificando:
-   - Qual gerador geométrico usar ("add_loft_mesh" com seções [z, rx, ry, roundness], "add_tube_sweep" com curva 3D e raios, "add_extruded_polygon", "add_lathe" ou "add_primitive" com mirrorX=true);
-   - Coordenadas [x, y, z] exatas garantindo conexão física sem buracos;
-   - Simetria bilateral ("mirrorX": true para pares esq/dir);
-   - TODOS os detalhes característicos visíveis nas fotos (olhos, expressões, mechas, chifres, guardas, lâminas, fivelas, rodas, faróis, botões, insígnias, frisos, texturas);
-   - Código #HEX exato de cada parte baseado nas cores extraídas dos pixels + metallic/roughness.`
-    : `Analise o pedido do usuário e o estado atual da cena, e escreva um blueprint técnico 3D detalhado (20 a 32 linhas) especificando:
-- Se deve limpar apenas o cubo inicial ou editar objetos existentes;
-- Bounding box Z-up (chão Z=0, frente -Y);
-- Decomposição rica de partes (20 a 50 sub-peças usando "add_loft_mesh", "add_tube_sweep", "add_extruded_polygon", "add_lathe" e primitivas com "mirrorX": true), coordenadas exatas conectadas, cores #HEX e materiais PBR.`
-}
-NÃO use emojis.`;
+    const archSystem = `You are the Lead 3D Mesh Topology & Computer Vision Director of Modix 3D (Z-UP: X=left/right with X=0 symmetry plane, -Y=front/+Y=back, Z=height with floor at Z=0).
+Design a complete anatomical & geometric blueprint (22 to 42 lines) so the Master Builder AI creates a GORGEOUS, SEAMLESSLY CONNECTED, ROUNDED UNIFIED MESH ("add_organic_mesh") combined harmoniously with crisp 3D parts ("add_loft_mesh", "add_tube_sweep", "add_extruded_polygon", "add_lathe", "add_primitive"):
+1. METRIC Z-UP BOUNDING BOX: Total height Z=[0..H], width X, depth Y (front = -Y), matching any reference image aspect ratio.
+2. UNIFIED CONNECTED MESH ANATOMY ("add_organic_mesh"): Specify which body/hull/organic structures must be fused into seamless smooth All-Quad SDF Meshes (listing exact "capsule" bones from->to with r1/r2, "ellipsoid" masses, "curve" splines, "rounded_box" shells, "subtract" cavities for eye sockets/mouths/grooves, "smooth" fillet radii 0.08..0.22, "mirrorX": true, and per-zone #HEX colors).
+3. COMPLEMENTARY 3D DETAILS: Specify crisp separate 3D parts seated onto the mesh (glossy eyes/pupils, blades, guards, visors, buckles, wheels, crowns, armor trim, textures) with exact Z-up coordinates so ZERO parts float.
+Do NOT use emojis.`;
 
-    const archUserText = `Pedido do usuário: "${effectivePrompt}"
-${refTelemetry ? `\nTelemetria Medida das Imagens de Referência:\n${refTelemetry}\n` : ''}
-Cena atual no editor:
+    const archUserText = `User Request: "${effectivePrompt}"
+${refTelemetry ? `\nMeasured Reference Image Telemetry:\n${refTelemetry}\n` : ''}
+Current Scene JSON:
 ${sceneSummary}`;
 
     try {
-      const archRes = await callOpenRouterWithFallback(
+      const archRes = await callOpenRouterChat(
         [
           { role: 'system', content: archSystem },
           { role: 'user', content: buildMultimodalContent(archUserText, refUrls) }
         ],
-        hasRefs
-          ? ['google/gemini-2.5-flash', 'openai/gpt-4o', 'anthropic/claude-3.5-sonnet', 'openai/gpt-4o-mini']
-          : ['google/gemini-2.5-flash', 'openai/gpt-4o-mini'],
-        0.2,
-        2800
+        FRONTIER_VISION_ARCHITECT_MODELS,
+        {
+          temperature: 0.2,
+          maxTokens: 3200,
+          requiresVision: hasRefs
+        }
       );
       architectBlueprint = archRes.content;
       stepsLog.push(
-        hasRefs
-          ? `IA de Visão 3D (${shortModel(archRes.modelUsed)}): ${referenceImages.length} referência(s) mapeadas em blueprint ortográfico`
-          : `IA Arquiteta (${shortModel(archRes.modelUsed)}): Blueprint anatômico 3D definido`
+        `Architect AI (${shortModel(archRes.modelUsed)})`
       );
     } catch {
-      // Proceed directly to Master Builder with multimodal images if Stage 1 fails
+      // Proceed directly to Master Builder if Stage 1 skips
     }
   }
 
   // =========================================================================
-  // STAGE 2: Specialist AI #2 — Master 3D Sculptor & Parametric Modeler
+  // STAGE 2: Specialist AI #2 — Frontier Master Unified Mesh & 3D Sculptor
   // =========================================================================
-  onProgress(
-    'IA Modeladora 3D Master',
-    hasRefs
-      ? 'Esculpindo malhas Loft, curvas 3D, simetria e detalhes fiéis às referências...'
-      : 'Construindo malhas Loft, curvas 3D, simetria, cortes e materiais PBR...'
-  );
+  onProgress('Master Mesh & 3D AI', tr('Processando...'));
 
   const recentContext: ORMessage[] = history.slice(-4).map((h) => ({
     role: h.role,
     content: h.content
   }));
 
-  const builderUserText = `Pedido do usuário: "${effectivePrompt}"
+  const builderUserText = `User Request: "${effectivePrompt}"
 ${
   refTelemetry
-    ? `\nIMAGENS DE REFERÊNCIA ANEXADAS (${referenceImages.length}) — CONSTRUA IDÊNTICO EM SILHUETA, PROPORÇÕES, DETALHES E CORES:\n${refTelemetry}\n`
+    ? `\nATTACHED REFERENCE IMAGES (${referenceImages.length}) — MATCH SILHOUETTE, CONNECTED ROUNDED MESH FLOW, DETAILS, AND EXACT HEX COLORS:\n${refTelemetry}\n`
     : ''
 }
-Cena atual JSON:
+Current Scene JSON:
 ${sceneSummary}
 ${
   architectBlueprint
-    ? `\nBlueprint Ortográfico 3D da IA Analista de Visão:\n${architectBlueprint}\n`
+    ? `\n3D & Unified Mesh Topological Blueprint from Architect AI:\n${architectBlueprint}\n`
     : ''
 }
-Gere agora o JSON completo { "reply": "...", "actions": [ ... ] } usando "add_loft_mesh", "add_tube_sweep", "add_extruded_polygon", "add_lathe" e "add_primitive" (com "mirrorX": true para todas as peças simétricas) de modo que o resultado 3D fique de altíssimo nível e fiel em cada detalhe.`;
+Generate the complete JSON { "reply": "...", "actions": [ ... ] } now.
+Remember:
+- Use "add_organic_mesh" (with smooth-welded capsules, ellipsoids, curves, rounded_boxes, subtract cavities, mirrorX: true, and resolution 60..74) so organic/sculpted bodies, heads, limbs, creatures, or rounded shells become ONE LITERAL CONNECTED, ROUNDED, SEAMLESS MESH!
+- Combine with "add_loft_mesh", "add_tube_sweep", "add_extruded_polygon", "add_lathe", and "add_primitive" for crisp 3D eyes, accessories, blades, visors, wheels, or mechanical parts!
+- Write "reply" in ${lang.enName} (${lang.nativeName}).`;
 
-  const builderRes = await callOpenRouterWithFallback(
+  const builderRes = await callOpenRouterChat(
     [
-      { role: 'system', content: MASTER_BUILDER_SYSTEM_PROMPT },
+      {
+        role: 'system',
+        content: buildMasterBuilderSystemPrompt(lang.enName, lang.code)
+      },
       ...recentContext,
       { role: 'user', content: buildMultimodalContent(builderUserText, refUrls) }
     ],
-    hasRefs
-      ? ['google/gemini-2.5-flash', 'anthropic/claude-3.5-sonnet', 'openai/gpt-4o', 'openai/gpt-4o-mini']
-      : ['google/gemini-2.5-flash', 'openai/gpt-4o', 'openai/gpt-4o-mini'],
-    0.22,
-    12000
+    FRONTIER_MASTER_3D_BUILDER_MODELS,
+    {
+      temperature: 0.2,
+      maxTokens: 14000,
+      requiresVision: hasRefs
+    }
   );
 
   const plan = extractPlanFromText(builderRes.content);
   if (!plan) {
     return {
       reply: builderRes.content,
-      steps: [...stepsLog, `Resposta direta (${shortModel(builderRes.modelUsed)})`]
+      steps: [...stepsLog, `Direct (${shortModel(builderRes.modelUsed)})`]
     };
   }
 
   stepsLog.push(
-    `IA Modeladora Master (${shortModel(builderRes.modelUsed)}): ${plan.actions.length} operações 3D estruturadas`
+    `Master 3D AI (${shortModel(builderRes.modelUsed)}): ${plan.actions.length} ops`
   );
 
   // =========================================================================
@@ -887,69 +778,73 @@ Gere agora o JSON completo { "reply": "...", "actions": [ ... ] } usando "add_lo
     stepsLog
   );
 
-  // Save ONE single atomic Undo snapshot covering BOTH initial build AND Stage 4 visual self-refinement!
+  // Save ONE atomic Undo snapshot covering initial build + Stage 4 visual inspection pass
   engine.pushUndoSnapshot();
   const origPushUndo = engine.pushUndoSnapshot.bind(engine);
   engine.pushUndoSnapshot = () => {};
 
   let totalExecuted = 0;
-  let finalReply = plan.reply;
+  const finalReply = plan.reply;
 
   try {
-    onProgress('Motor Modix 3D', 'Montando geometrias Loft, Sweeps, simetria e materiais PBR...');
+    onProgress('Modix 3D Kernel', tr('Processando...'));
     totalExecuted += executeAgentActionsInternal(engine, plan.actions, preRenderedCustomTextures);
     engine.frameAllMeshes();
 
     // =========================================================================
-    // STAGE 4: Specialist AI #4 — Visual 3D Inspector (Render vs Reference Loop!)
+    // STAGE 4: Specialist AI #4 — Visual 3D Inspector (3-Angle Render QA Loop!)
+    // Runs both when references are attached AND on complex multi-AI builds!
     // =========================================================================
-    if (hasRefs && multiAI && engine.state.objects.some((o) => o.kind === 'MESH')) {
+    if (multiAI && engine.state.objects.some((o) => o.kind === 'MESH')) {
       const inspectionSheetUrl = engine.captureMultiViewInspectionDataURL();
       if (inspectionSheetUrl) {
-        onProgress(
-          'IA Inspetora Visual 3D',
-          'Comparando render 3D (Frente / Lado / 3/4) com suas imagens de referência...'
-        );
+        onProgress('3D Inspector AI', tr('Processando...'));
 
         try {
           const updatedSceneJson = engine.getSceneSummaryForAI();
-          const inspectorSystem = `Você é a IA Inspetora de Controle de Qualidade Visual 3D do Modix 3D.
-Você receberá:
-1. As IMAGENS DE REFERÊNCIA originais do usuário;
-2. A última imagem contendo a FOLHA DE INSPEÇÃO 3D RENDERIZADA do modelo atual que acabou de ser construído no Modix 3D em 3 ângulos: FRONT (-Y), SIDE (+X) e 3/4 HERO;
-3. A lista JSON exata dos objetos atuais na cena com seus "worldBounds" [minX..maxX, minY..maxY, minZ..maxZ], "location", "rotationDeg", "scale" e "color".
+          const inspectorSystem = `You are the Visual 3D & Mesh Quality Inspector AI of Modix 3D.
+You receive:
+${hasRefs ? '1. The user’s original REFERENCE IMAGES;\n2. The last image showing' : '1. An image showing'} the 3-ANGLE RENDERED INSPECTION SHEET (FRONT -Y, SIDE +X, 3/4 HERO) of the 3D model currently in the viewport;
+- Plus the exact JSON scene summary with worldBounds [minX..maxX, minY..maxY, minZ..maxZ].
 
-Compare rigorosamente as IMAGENS DE REFERÊNCIA com o RENDER 3D ATUAL:
-- Alguma peça ficou flutuando, desconectada, torta ou rotacionada no eixo errado?
-- Alguma proporção principal (largura, altura, profundidade, tamanho da cabeça/lâmina/rodas/membros) divergiu da referência?
-- Falta algum detalhe marcante da referência (ex: olhos, visor, chifres, orelhas, guarda, detalhes frontais, frisos, cores secundárias)?
-- Alguma cor diferiu da referência?
+Inspect rigorously:
+- Are any pieces floating, disconnected, misaligned, or rotated on the wrong axis?
+- Did any part that should be a smooth, rounded, connected Mesh look blocky or detached? (You can fix/replace it with "add_organic_mesh" or weld pieces together with "fuse_to_mesh"!)
+- Are key details missing (eyes/pupils, ears, horns, tail, mouth/visor, trim, secondary colors) or proportions off?
 
-Retorne EXCLUSIVAMENTE JSON puro no formato:
+Return EXCLUSIVELY pure JSON:
 {
   "needsRefinement": true | false,
-  "critique": "Diagnóstico curto sem emojis",
-  "actions": [ ... lista cirúrgica de operações Modix 3D (transform_object, add_loft_mesh, add_tube_sweep, add_primitive com mirrorX, add_extruded_polygon, paint_material, delete_object, deform_mesh) para deixar IDÊNTICO à referência. NUNCA use clear_meshes aqui! ... ]
+  "critique": "Short technical note without emojis",
+  "actions": [ ... surgical Modix 3D actions (transform_object, add_organic_mesh, fuse_to_mesh, add_loft_mesh, add_tube_sweep, add_primitive with mirrorX, paint_material, delete_object, deform_mesh). NEVER use clear_meshes here! ... ]
 }
-Se o modelo já estiver muito fiel, retorne { "needsRefinement": false, "actions": [] }.`;
+If the 3D & Mesh model already looks cohesive, connected, rounded, and accurate, return { "needsRefinement": false, "actions": [] }.`;
 
-          const inspectorImages = [...refUrls.slice(0, 4), inspectionSheetUrl];
-          const inspectorUserText = `Pedido: "${effectivePrompt}"
-As primeiras ${Math.min(4, refUrls.length)} imagem(ns) são as REFERÊNCIAS DO USUÁRIO. A ÚLTIMA imagem (com rótulos FRONT / SIDE / 3/4 HERO) é o RENDER ATUAL DO MODELO 3D construído.
+          const inspectorImages = hasRefs
+            ? [...refUrls.slice(0, 4), inspectionSheetUrl]
+            : [inspectionSheetUrl];
 
-Objetos atuais na cena (Z-up, frente = -Y):
-${updatedSceneJson}
+          const inspectorUserText = `User Request: "${effectivePrompt}"
+${
+  hasRefs
+    ? `First ${Math.min(4, refUrls.length)} image(s) = USER REFERENCES. LAST image (FRONT / SIDE / 3/4 HERO) = CURRENT 3D RENDER.`
+    : `Attached image (FRONT / SIDE / 3/4 HERO) = CURRENT 3D RENDER.`
+}
 
-Compare e gere os ajustes finos de precisão caso necessário.`;
+Current scene objects (Z-up, front = -Y):
+${updatedSceneJson}`;
 
-          const inspRes = await callOpenRouterWithFallback(
+          const inspRes = await callOpenRouterChat(
             [
               { role: 'system', content: inspectorSystem },
               { role: 'user', content: buildMultimodalContent(inspectorUserText, inspectorImages) }
             ],
-            ['google/gemini-2.5-flash', 'openai/gpt-4o', 'anthropic/claude-3.5-sonnet'],
-            0.18,
-            5500
+            FRONTIER_VISION_ARCHITECT_MODELS,
+            {
+              temperature: 0.16,
+              maxTokens: 6000,
+              requiresVision: true
+            }
           );
 
           const verdict = extractJsonObject<InspectorVerdictPayload>(inspRes.content);
@@ -958,10 +853,7 @@ Compare e gere os ajustes finos de precisão caso necessário.`;
             : [];
 
           if (verdict?.needsRefinement && refineActions.length > 0) {
-            onProgress(
-              'Refinamento de Precisão 3D',
-              `Aplicando ${refineActions.length} ajuste(s) finos de fidelidade visual...`
-            );
+            onProgress('3D Refinement', tr('Processando...'));
             const extraTex = await synthesizeCustomTexturesForActions(
               refineActions,
               effectivePrompt,
@@ -973,12 +865,10 @@ Compare e gere os ajustes finos de precisão caso necessário.`;
             totalExecuted += refinedCount;
             engine.frameAllMeshes();
             stepsLog.push(
-              `IA Inspetora Visual (${shortModel(inspRes.modelUsed)}): ${refinedCount} ajuste(s) finos aplicados para fidelidade à referência`
+              `Inspector AI (${shortModel(inspRes.modelUsed)}): +${refinedCount} refinements`
             );
           } else {
-            stepsLog.push(
-              `IA Inspetora Visual (${shortModel(inspRes.modelUsed)}): Silhueta, proporções e cores aprovadas`
-            );
+            stepsLog.push(`Inspector AI (${shortModel(inspRes.modelUsed)}): verified`);
           }
         } catch {
           // Non-fatal if visual inspection pass skips
@@ -989,7 +879,7 @@ Compare e gere os ajustes finos de precisão caso necessário.`;
     engine.pushUndoSnapshot = origPushUndo;
   }
 
-  stepsLog.push(`Cena 3D finalizada (${totalExecuted} operação(ões) aplicadas - Undo disponível)`);
+  stepsLog.push(`Modix 3D: ${totalExecuted} ops`);
 
   return {
     reply: finalReply,
@@ -1008,17 +898,17 @@ async function synthesizeCustomTexturesForActions(
   const map = new Map<AgentAction, string>();
   if (customTexActions.length === 0) return map;
 
-  onProgress(
-    'IA Artista de Texturas',
-    `Pintando ${customTexActions.length} textura(s) 512x512 sob medida...`
-  );
+  onProgress('Texture AI', tr('Processando...'));
   await Promise.all(
     customTexActions.map(async (act) => {
       try {
         const svgCode =
           act.svg && act.svg.includes('<svg')
             ? act.svg
-            : await generateTextureSvgViaArtistAI(act.description || fallbackPrompt, referenceImages);
+            : await generateTextureSvgViaArtistAI(
+                act.description || fallbackPrompt,
+                referenceImages
+              );
         const pngUrl = await renderSVGToTextureDataUrl(svgCode, 512);
         map.set(act, pngUrl);
       } catch {
@@ -1026,7 +916,7 @@ async function synthesizeCustomTexturesForActions(
       }
     })
   );
-  stepsLog.push(`IA Artista de Texturas: ${customTexActions.length} textura(s) 512x512 aplicadas`);
+  stepsLog.push(`Texture AI: ${customTexActions.length}x 512px`);
   return map;
 }
 
@@ -1055,6 +945,43 @@ function toVec3(val: unknown, fallback: [number, number, number]): [number, numb
     ];
   }
   return [...fallback];
+}
+
+function normalizeSDFElement(raw: Partial<SDFElementSpec>): SDFElementSpec | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const rawType = String(raw.type || 'ellipsoid').toLowerCase() as SDFElementKind;
+  const type: SDFElementKind = VALID_SDF_TYPES.has(rawType) ? rawType : 'ellipsoid';
+  const mode =
+    raw.mode === 'subtract'
+      ? 'subtract'
+      : raw.mode === 'intersect'
+        ? 'intersect'
+        : 'union';
+
+  return {
+    type,
+    mode,
+    smooth: typeof raw.smooth === 'number' ? raw.smooth : undefined,
+    center: raw.center ? toVec3(raw.center, [0, 0, 0]) : undefined,
+    radii: raw.radii,
+    radius: typeof raw.radius === 'number' ? raw.radius : undefined,
+    size: raw.size ? toVec3(raw.size, [0.3, 0.3, 0.3]) : undefined,
+    height: typeof raw.height === 'number' ? raw.height : undefined,
+    bevel: typeof raw.bevel === 'number' ? raw.bevel : undefined,
+    majorRadius: typeof raw.majorRadius === 'number' ? raw.majorRadius : undefined,
+    minorRadius: typeof raw.minorRadius === 'number' ? raw.minorRadius : undefined,
+    from: raw.from ? toVec3(raw.from, [0, 0, 0]) : undefined,
+    to: raw.to ? toVec3(raw.to, [0, 0, 0.5]) : undefined,
+    r1: typeof raw.r1 === 'number' ? raw.r1 : undefined,
+    r2: typeof raw.r2 === 'number' ? raw.r2 : undefined,
+    points: Array.isArray(raw.points)
+      ? raw.points.map((pt) => toVec3(pt, [0, 0, 0]))
+      : undefined,
+    rotation: raw.rotation ? toVec3(raw.rotation, [0, 0, 0]) : undefined,
+    mirrorX: Boolean(raw.mirrorX),
+    mirrorY: Boolean(raw.mirrorY),
+    color: typeof raw.color === 'string' ? raw.color : undefined
+  };
 }
 
 function applyInlineModifiersAndSymmetry(
@@ -1104,7 +1031,12 @@ function applyInlineModifiersAndSymmetry(
   return extraCount;
 }
 
-function assignGroupAndMaterial(engine: ModixEngine, obj: SceneObjectData, act: AgentAction): void {
+function assignGroupAndMaterial(
+  engine: ModixEngine,
+  obj: SceneObjectData,
+  act: AgentAction,
+  preserveWhiteForVertexColors = false
+): void {
   if (act.group) {
     if (!engine.state.collections.some((c) => c.name === act.group)) {
       engine.createCollection(act.group);
@@ -1114,7 +1046,11 @@ function assignGroupAndMaterial(engine: ModixEngine, obj: SceneObjectData, act: 
   if (act.location) obj.location = toVec3(act.location, obj.location);
   if (act.rotation) obj.rotationDeg = toVec3(act.rotation, obj.rotationDeg);
   if (act.scale) obj.scale = toVec3(act.scale, obj.scale);
-  if (act.color) obj.material.baseColor = act.color;
+  if (preserveWhiteForVertexColors) {
+    obj.material.baseColor = '#ffffff';
+  } else if (act.color) {
+    obj.material.baseColor = act.color;
+  }
   if (typeof act.metallic === 'number') obj.material.metallic = clamp01(act.metallic);
   if (typeof act.roughness === 'number') obj.material.roughness = clamp01(act.roughness);
   if (act.emissionColor) obj.material.emissionColor = act.emissionColor;
@@ -1150,6 +1086,71 @@ function executeAgentActionsInternal(
         break;
       }
 
+      case 'add_organic_mesh':
+      case 'add_sdf_mesh':
+      case 'add_unified_mesh': {
+        if (Array.isArray(act.elements) && act.elements.length > 0) {
+          const validEls = act.elements
+            .map((e) => normalizeSDFElement(e))
+            .filter((e): e is SDFElementSpec => Boolean(e));
+          if (validEls.length > 0) {
+            const mesh = createUnifiedSDFMesh({
+              elements: validEls,
+              resolution: act.resolution ?? 62,
+              defaultSmooth: act.defaultSmooth ?? act.smooth ?? 0.12,
+              baseColor: act.color || '#cbd5e1'
+            });
+            const hasVC = Boolean(mesh.vertexColors && mesh.vertexColors.length > 0);
+            const obj = engine.addImportedMesh(
+              act.name || 'UnifiedMesh',
+              mesh,
+              {
+                baseColor: hasVC ? '#ffffff' : act.color || '#cbd5e1',
+                metallic: typeof act.metallic === 'number' ? clamp01(act.metallic) : 0.08,
+                roughness: typeof act.roughness === 'number' ? clamp01(act.roughness) : 0.46,
+                emissionColor: act.emissionColor || '#000000',
+                emissionStrength: Number(act.emissionStrength) || 0,
+                opacity: typeof act.opacity === 'number' ? clamp01(act.opacity) : 1
+              },
+              act.location ? toVec3(act.location, [0, 0, 0]) : [0, 0, 0]
+            );
+            const cleanAct = { ...act, subdivide: undefined };
+            assignGroupAndMaterial(engine, obj, cleanAct, hasVC);
+            newlyCreatedIds.push(obj.id);
+            count += 1 + applyInlineModifiersAndSymmetry(engine, obj, cleanAct, newlyCreatedIds);
+          }
+        }
+        break;
+      }
+
+      case 'fuse_to_mesh': {
+        let ids: string[] = [];
+        if (Array.isArray(act.targets) && act.targets.length > 0) {
+          if (act.targets.includes('ALL')) {
+            ids = engine.state.objects.filter((o) => o.kind === 'MESH').map((o) => o.id);
+          } else {
+            ids = act.targets
+              .map((n) => engine.findObjectByNameOrId(n)?.id)
+              .filter((x): x is string => Boolean(x));
+          }
+        } else if (act.target) {
+          ids = resolveTargets(engine, act.target).map((o) => o.id);
+        }
+        if (ids.length >= 1) {
+          const fused = engine.fuseObjectsToSmoothMesh(
+            ids,
+            act.smooth ?? act.defaultSmooth ?? 0.09,
+            act.resolution ?? 60,
+            act.newName || act.name
+          );
+          if (fused) {
+            newlyCreatedIds.push(fused.id);
+            count++;
+          }
+        }
+        break;
+      }
+
       case 'add_primitive': {
         const shape: PrimitiveType = VALID_SHAPES.has(String(act.shape))
           ? (act.shape as PrimitiveType)
@@ -1172,8 +1173,9 @@ function executeAgentActionsInternal(
             rotDeg: typeof s?.rotDeg === 'number' ? s.rotDeg : 0
           }));
           const mesh = createLoftedSectionsMesh(validSections, {
-            radialSegments: act.radialSegments ?? 18,
+            radialSegments: act.radialSegments ?? 20,
             subdivideLevels: act.subdivideLevels ?? act.subdivide ?? 0,
+            roundedCaps: act.roundedCaps !== false,
             shadeSmooth: act.shadeSmooth !== false
           });
           const obj = engine.addImportedMesh(
@@ -1201,7 +1203,7 @@ function executeAgentActionsInternal(
         if (Array.isArray(act.path) && act.path.length >= 2) {
           const cleanPath: [number, number, number][] = act.path.map((p) => toVec3(p, [0, 0, 0]));
           const mesh = createTubeSweepMesh(cleanPath, act.radii ?? 0.12, {
-            radialSegments: act.radialSegments ?? 14,
+            radialSegments: act.radialSegments ?? 18,
             tubularSamples: act.tubularSamples,
             closed: Boolean(act.closed),
             aspectY: act.aspectY ?? 1,
@@ -1350,7 +1352,12 @@ function executeAgentActionsInternal(
 
       case 'paint_material': {
         for (const obj of resolveTargets(engine, act.target)) {
-          if (act.color) obj.material.baseColor = act.color;
+          if (act.color) {
+            obj.material.baseColor = act.color;
+            if (obj.mesh?.vertexColors) {
+              obj.mesh.vertexColors = undefined;
+            }
+          }
           if (typeof act.metallic === 'number') obj.material.metallic = clamp01(act.metallic);
           if (typeof act.roughness === 'number') obj.material.roughness = clamp01(act.roughness);
           if (act.emissionColor) obj.material.emissionColor = act.emissionColor;
@@ -1429,7 +1436,10 @@ function executeAgentActionsInternal(
           } else if (dt === 'taper') {
             engine.deformMeshObject(obj.id, { type: 'taper', topScale: Number(act.amount) ?? 0.4 });
           } else if (dt === 'smooth') {
-            engine.deformMeshObject(obj.id, { type: 'smooth', levels: Math.min(2, Math.max(1, Number(act.amount) || 1)) });
+            engine.deformMeshObject(obj.id, {
+              type: 'smooth',
+              levels: Math.min(2, Math.max(1, Number(act.amount) || 1))
+            });
           } else if (dt === 'bevel') {
             const allFaces = obj.mesh.faces.map((_, idx) => idx);
             obj.mesh = bevelFaces(obj.mesh, allFaces.slice(0, 16), Number(act.amount) || 0.18).mesh;

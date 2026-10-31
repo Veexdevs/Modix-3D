@@ -22,6 +22,7 @@ import {
   displaceMeshNoise,
   evaluateMeshWithModifiers,
   extrudeFaces,
+  fuseWorldMeshesToUnifiedMesh,
   insetFaces,
   loopCutAxis,
   separateLooseParts,
@@ -1099,6 +1100,70 @@ export class ModixEngine {
     return target;
   }
 
+  /**
+   * Remeshes and smooth-welds multiple 3D mesh objects into ONE single connected,
+   * watertight, smooth, rounded All-Quad Mesh (ZBrush DynaMesh / Smooth Boolean Union).
+   */
+  public fuseObjectsToSmoothMesh(
+    objectIds?: string[],
+    smoothness = 0.09,
+    resolution = 58,
+    newName?: string
+  ): SceneObjectData | null {
+    const ids = objectIds && objectIds.length > 0 ? objectIds : this.state.selectedIds;
+    const selMeshes = this.state.objects.filter(
+      (o) => ids.includes(o.id) && o.kind === 'MESH' && o.mesh
+    );
+    if (selMeshes.length === 0) return null;
+
+    const target =
+      selMeshes.find((o) => o.id === this.state.activeObjectId) || selMeshes[0];
+    this.pushUndoSnapshot();
+
+    const v = new THREE.Vector3();
+    const worldParts = selMeshes.map((part) => {
+      const evaluated = evaluateMeshWithModifiers(part.mesh!, part.modifiers);
+      const partMat = this.getObjectMatrix4(part);
+      const worldVerts: [number, number, number][] = evaluated.vertices.map(([x, y, z]) => {
+        v.set(x, y, z).applyMatrix4(partMat);
+        return [v.x, v.y, v.z];
+      });
+      return {
+        mesh: {
+          vertices: worldVerts,
+          faces: evaluated.faces.map((f) => [...f]),
+          shadeSmooth: true
+        },
+        colorHex: part.material.baseColor || '#cbd5e1'
+      };
+    });
+
+    const unifiedMesh = fuseWorldMeshesToUnifiedMesh(worldParts, {
+      smoothness,
+      resolution
+    });
+
+    target.location = [0, 0, 0];
+    target.rotationDeg = [0, 0, 0];
+    target.scale = [1, 1, 1];
+    target.mesh = unifiedMesh;
+    target.modifiers = [];
+    if (unifiedMesh.vertexColors && unifiedMesh.vertexColors.length > 0) {
+      target.material.baseColor = '#ffffff';
+    }
+    if (newName) {
+      target.name = this.makeUniqueName(newName, target.id);
+    }
+
+    const removeSet = new Set(selMeshes.filter((o) => o.id !== target.id).map((o) => o.id));
+    this.state.objects = this.state.objects.filter((o) => !removeSet.has(o.id));
+    this.state.selectedIds = [target.id];
+    this.state.activeObjectId = target.id;
+    this.rebuildSceneObjects();
+    this.notify();
+    return target;
+  }
+
   /** Separates disconnected mesh islands into individual objects */
   public separateSelectedByLooseParts(): SceneObjectData[] {
     const active = this.getActiveObject();
@@ -1846,12 +1911,17 @@ export class ModixEngine {
           });
         } else {
           // MATERIAL, RENDERED, or TEXTURE_PAINT mode
+          const hasVC = Boolean(evaluated.vertexColors && evaluated.vertexColors.length > 0);
           surfaceMat = new THREE.MeshStandardMaterial({
             color: new THREE.Color(
-              liveTex && obj.material.baseColor === '#9a9a9a' ? '#ffffff' : obj.material.baseColor
+              hasVC && !liveTex
+                ? '#ffffff'
+                : liveTex && obj.material.baseColor === '#9a9a9a'
+                  ? '#ffffff'
+                  : obj.material.baseColor
             ),
             map: liveTex ? liveTex.texture : null,
-            vertexColors: Boolean(evaluated.vertexColors && evaluated.vertexColors.length > 0),
+            vertexColors: hasVC,
             metalness: obj.material.metallic,
             roughness: obj.material.roughness,
             emissive: new THREE.Color(obj.material.emissionColor),

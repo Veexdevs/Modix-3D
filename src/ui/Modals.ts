@@ -1,4 +1,5 @@
 import type { OBJExportOptions } from '../engine/Exporters';
+import { tr } from '../i18n/I18nService';
 import { Icons } from '../icons/blenderIcons';
 
 export interface DropdownItem {
@@ -117,9 +118,10 @@ export function showToast(message: string): void {
   if (!toast) {
     toast = document.createElement('div');
     toast.className = 'modix-toast';
+    toast.setAttribute('data-no-i18n', 'true');
     document.body.appendChild(toast);
   }
-  toast.textContent = message;
+  toast.textContent = tr(message);
   toast.style.display = 'block';
   window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => {
@@ -143,32 +145,33 @@ export function openTextPromptModal(opts: {
   overlay.innerHTML = `
     <div class="modix-splash-card" style="width:min(380px, 90vw);">
       <div class="drawer-hdr">
-        <span>${escapeHtml(opts.title)}</span>
+        <span>${escapeHtml(tr(opts.title))}</span>
         <button type="button" class="modix-btn" data-close style="height:22px;padding:0 6px;">${Icons.close}</button>
       </div>
       <form id="modix-prompt-form" style="padding:12px;display:flex;flex-direction:column;gap:10px;background:#111;">
         <label style="display:flex;flex-direction:column;gap:5px;color:#ccc;font-size:11px;">
-          <span>${escapeHtml(opts.label)}</span>
+          <span>${escapeHtml(tr(opts.label))}</span>
           <input
             type="text"
             id="modix-prompt-inp"
             class="props-name-input"
+            data-no-i18n="true"
             style="height:30px;font-size:12px;"
             value="${escapeHtml(opts.initialValue)}"
-            placeholder="${escapeHtml(opts.placeholder || '')}"
+            placeholder="${escapeHtml(tr(opts.placeholder || ''))}"
           />
         </label>
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
           <div>
             ${
               opts.extraActionLabel
-                ? `<button type="button" class="modix-btn" id="modix-prompt-extra">${Icons.upload}<span>${escapeHtml(opts.extraActionLabel)}</span></button>`
+                ? `<button type="button" class="modix-btn" id="modix-prompt-extra">${Icons.upload}<span>${escapeHtml(tr(opts.extraActionLabel))}</span></button>`
                 : ''
             }
           </div>
           <div style="display:flex;gap:8px;">
-            <button type="button" class="modix-btn" data-close>Cancelar</button>
-            <button type="submit" class="modix-btn primary">${escapeHtml(opts.confirmLabel || 'Confirmar')}</button>
+            <button type="button" class="modix-btn" data-close>${escapeHtml(tr('Cancelar'))}</button>
+            <button type="submit" class="modix-btn primary">${escapeHtml(tr(opts.confirmLabel || 'Salvar'))}</button>
           </div>
         </div>
       </form>
@@ -211,7 +214,7 @@ export function openSliceMeshModal(
     <div class="modix-splash-card" style="width:min(400px, 90vw);">
       <div class="drawer-hdr">
         <span style="display:flex;align-items:center;gap:6px;">
-          ${Icons.slice3d}<span>Recortar / Fatiar Malha 3D — ${escapeHtml(objectName)}</span>
+          ${Icons.slice3d}<span>Recortar / Fatiar Malha 3D</span> — <span data-no-i18n="true">${escapeHtml(objectName)}</span>
         </span>
         <button type="button" class="modix-btn" data-close style="height:22px;padding:0 6px;">${Icons.close}</button>
       </div>
