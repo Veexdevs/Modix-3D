@@ -186,6 +186,11 @@ button {
   gap: 5px;
   color: #dadada;
   font-size: 11px;
+  transition: background 0.12s, color 0.12s;
+}
+.modix-scene-pill:hover {
+  background: #1b1b1b;
+  color: #f4f4f4;
 }
 .modix-scene-pill .pill-chevron {
   color: #888;
@@ -1452,239 +1457,281 @@ button {
   opacity: 1;
 }
 
-/* Topbar AI / Agent Button */
+/* Topbar AI / Agent Button (Dark, matching .modix-scene-pill on its right) */
 .modix-ai-top-btn {
   height: 24px;
-  padding: 0 9px;
+  padding: 0 8px;
   border-radius: 4px;
-  background: #f4f4f5;
-  color: #09090b;
-  font-weight: 600;
+  background: #121212;
+  color: #dadada;
+  font-weight: 500;
   font-size: 11px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid #ffffff;
-  transition: transform 0.1s, background 0.12s;
+  border: 1px solid #222222;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 .modix-ai-top-btn:hover {
-  background: #ffffff;
+  background: #1b1b1b;
+  color: #f4f4f4;
+}
+.modix-ai-top-btn.active {
+  background: #202020;
+  border-color: #363636;
+  color: #ffffff;
 }
 .modix-ai-top-btn .ai-star {
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  color: #cfcfcf;
 }
 
-/* Floating / Docked AI & Multi-Agent Panel */
+/* Clean Minimal Dark AI & Multi-Agent Drawer */
 .modix-ai-drawer {
   position: fixed;
   top: 36px;
   right: 10px;
   bottom: 10px;
-  width: min(375px, 48vw);
-  background: #0d0d0f;
-  border: 1px solid #2b2b30;
-  border-radius: 8px;
+  width: min(356px, 46vw);
+  background: #0a0a0b;
+  border: 1px solid #222224;
+  border-radius: 10px;
   z-index: 110;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.85);
+  box-shadow: 0 20px 56px rgba(0, 0, 0, 0.88);
   overflow: hidden;
 }
 
-.modix-ai-header {
-  height: 34px;
-  min-height: 34px;
-  padding: 0 10px;
-  background: #050506;
-  border-bottom: 1px solid #222226;
+.modix-ai-hdr {
+  height: 40px;
+  min-height: 40px;
+  padding: 0 8px;
+  background: #070708;
+  border-bottom: 1px solid #1b1b1e;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
 }
-.modix-ai-title {
-  display: flex;
+
+.modix-ai-seg {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-weight: 600;
-  font-size: 12px;
-  color: #f8fafc;
+  background: #111113;
+  border: 1px solid #202024;
+  border-radius: 7px;
+  padding: 2px;
+  gap: 2px;
 }
-.modix-ai-spark {
-  color: #ffffff;
-}
-.modix-ai-icon-btn {
-  width: 24px;
+.modix-ai-seg-btn {
   height: 24px;
-  border-radius: 4px;
-  color: #a1a1aa;
+  padding: 0 9px;
+  border-radius: 5px;
+  color: #8f8f96;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: background 0.12s, color 0.12s;
+}
+.modix-ai-seg-btn:hover {
+  color: #e4e4e7;
+}
+.modix-ai-seg-btn.active {
+  background: #262629;
+  color: #f4f4f5;
+}
+
+.modix-ai-hdr-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.modix-ai-icon-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: #8e8e95;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 12px;
+  transition: background 0.12s, color 0.12s;
 }
 .modix-ai-icon-btn:hover,
 .modix-ai-icon-btn.active {
-  background: #27272a;
-  color: #fff;
-}
-
-.modix-ai-mode-switch {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
-  padding: 6px 8px;
-  background: #121215;
-  border-bottom: 1px solid #202024;
-}
-.modix-ai-mode-btn {
-  height: 28px;
-  border-radius: 5px;
-  background: #1c1c20;
-  border: 1px solid #2c2c32;
-  color: #a1a1aa;
-  font-size: 11px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-}
-.modix-ai-mode-btn .mode-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #52525b;
-}
-.modix-ai-mode-btn.active.ia {
-  background: #27272a;
-  border-color: #d4d4d8;
-  color: #ffffff;
-}
-.modix-ai-mode-btn.active.ia .mode-dot {
-  background: #38bdf8;
-}
-.modix-ai-mode-btn.active.agente {
-  background: #f4f4f5;
-  border-color: #ffffff;
-  color: #09090b;
-}
-.modix-ai-mode-btn.active.agente .mode-dot {
-  background: #16a34a;
-}
-
-.modix-ai-subbar {
-  padding: 4px 10px;
-  background: #16181d;
-  border-bottom: 1px solid #23262f;
-  font-size: 10.2px;
-  color: #cbd5e1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
-.modix-ai-subbar.ia-sub {
-  background: #141417;
-  color: #a1a1aa;
-}
-.modix-ai-undo-chip {
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: #27272a;
-  border: 1px solid #3f3f46;
+  background: #1c1c1f;
   color: #f4f4f5;
-  font-size: 10px;
-  white-space: nowrap;
 }
 
 .modix-ai-settings {
-  padding: 8px 10px;
-  background: #151518;
-  border-bottom: 1px solid #27272a;
+  padding: 10px 12px;
+  background: #0f0f11;
+  border-bottom: 1px solid #1e1e22;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
 }
 .modix-ai-chk {
   display: flex;
-  align-items: flex-start;
-  gap: 6px;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: #d4d4d8;
+}
+.modix-ai-settings-lbl {
   font-size: 10.5px;
-  color: #e4e4e7;
+  color: #8e8e95;
+}
+.modix-ai-settings-row {
+  display: flex;
+  gap: 5px;
 }
 .modix-ai-key-inp {
   flex: 1;
-  height: 24px;
-  background: #09090b;
-  border: 1px solid #3f3f46;
-  border-radius: 4px;
-  padding: 0 7px;
-  color: #fff;
+  height: 26px;
+  background: #080809;
+  border: 1px solid #28282e;
+  border-radius: 6px;
+  padding: 0 8px;
+  color: #f4f4f5;
   font-size: 11px;
   outline: none;
+}
+.modix-ai-key-inp:focus {
+  border-color: #52525b;
 }
 
 .modix-ai-messages {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 8px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
+
+.modix-ai-empty {
+  margin: auto 0;
+  padding: 24px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+}
+.modix-ai-empty-ico {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: #141416;
+  border: 1px solid #232327;
+  color: #d4d4d8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+}
+.modix-ai-empty-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #f4f4f5;
+}
+.modix-ai-empty-sub {
+  font-size: 11.2px;
+  line-height: 1.45;
+  color: #82828a;
+  max-width: 240px;
+}
+
 .modix-ai-msg {
-  padding: 7px 9px;
-  border-radius: 6px;
-  font-size: 11.3px;
-  line-height: 1.4;
+  padding: 9px 11px;
+  border-radius: 10px;
+  font-size: 11.6px;
+  line-height: 1.48;
 }
 .modix-ai-msg.user {
   align-self: flex-end;
-  max-width: 88%;
-  background: #2664bb;
-  color: #ffffff;
+  max-width: 86%;
+  background: #1e1e21;
+  border: 1px solid #2b2b30;
+  color: #f4f4f5;
 }
 .modix-ai-msg.assistant {
   align-self: stretch;
-  background: #18181b;
-  border: 1px solid #27272a;
+  background: #111113;
+  border: 1px solid #1d1d21;
   color: #e4e4e7;
 }
 .modix-ai-msg-meta {
   font-size: 9.8px;
   font-weight: 600;
-  opacity: 0.72;
+  color: #7d7d85;
   margin-bottom: 3px;
+  letter-spacing: 0.01em;
 }
 .modix-ai-msg-text code {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: 4px;
   font-family: monospace;
+  font-size: 10.6px;
+}
+
+.modix-ai-steps-details {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid #1d1d21;
+}
+.modix-ai-steps-details summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.2px;
+  color: #9ca3af;
+  user-select: none;
+}
+.modix-ai-steps-details summary::-webkit-details-marker {
+  display: none;
+}
+.modix-ai-steps-details summary:hover {
+  color: #e4e4e7;
 }
 .modix-ai-steps {
-  margin-top: 6px;
-  padding-top: 5px;
-  border-top: 1px dashed #2e2e34;
+  margin-top: 5px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  padding-left: 4px;
 }
 .modix-ai-step-item {
   font-size: 10px;
-  color: #93c5fd;
+  color: #8e8e96;
 }
 
 .modix-ai-live-status {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 8px 10px;
-  background: #141b29;
-  border: 1px solid #28416b;
-  border-radius: 6px;
+  padding: 9px 11px;
+  background: #121214;
+  border: 1px solid #232328;
+  border-radius: 9px;
+}
+.modix-ai-live-copy {
+  min-width: 0;
 }
 .modix-ai-spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(147, 197, 253, 0.25);
-  border-top-color: #93c5fd;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  border-top-color: #e4e4e7;
   border-radius: 50%;
   animation: modix-spin 0.75s linear infinite;
   flex-shrink: 0;
@@ -1697,74 +1744,62 @@ button {
 .modix-ai-live-status .live-badge {
   font-weight: 600;
   font-size: 10.8px;
-  color: #dbeafe;
+  color: #f4f4f5;
 }
 .modix-ai-live-status .live-desc {
-  font-size: 10px;
-  color: #93c5fd;
-}
-
-.modix-ai-chips {
-  display: flex;
-  gap: 5px;
-  overflow-x: auto;
-  padding: 5px 8px;
-  border-top: 1px solid #1e1e22;
-  scrollbar-width: none;
-}
-.modix-ai-chips::-webkit-scrollbar {
-  display: none;
-}
-.modix-ai-chip {
-  flex-shrink: 0;
-  padding: 4px 8px;
-  background: #18181b;
-  border: 1px solid #2e2e34;
-  border-radius: 999px;
-  color: #d4d4d8;
   font-size: 10.2px;
-  max-width: 220px;
+  color: #8e8e96;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.modix-ai-chip:hover {
-  background: #27272a;
-  color: #fff;
 }
 
 .modix-ai-input-bar {
   display: flex;
+  align-items: center;
   gap: 6px;
-  padding: 7px 8px;
-  background: #09090b;
-  border-top: 1px solid #222226;
+  padding: 8px 10px;
+  background: #080809;
+  border-top: 1px solid #1b1b1e;
 }
 .modix-ai-input-bar input {
   flex: 1;
-  height: 30px;
-  background: #161619;
-  border: 1px solid #2e2e36;
-  border-radius: 5px;
-  padding: 0 9px;
+  height: 32px;
+  background: #121214;
+  border: 1px solid #242428;
+  border-radius: 7px;
+  padding: 0 10px;
   color: #f4f4f5;
-  font-size: 11.5px;
+  font-size: 11.6px;
   outline: none;
+  transition: border-color 0.12s;
+}
+.modix-ai-input-bar input::placeholder {
+  color: #6b6b73;
 }
 .modix-ai-input-bar input:focus {
-  border-color: #ffffff;
+  border-color: #44444c;
 }
 .modix-ai-send-btn {
-  height: 30px;
-  padding: 0 12px;
-  border-radius: 5px;
-  background: #ffffff;
-  color: #09090b;
-  font-weight: 600;
-  font-size: 11.2px;
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  background: #1e1e22;
+  border: 1px solid #2e2e34;
+  color: #ededef;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.modix-ai-send-btn:hover:not(:disabled) {
+  background: #2a2a30;
+  border-color: #45454f;
+  color: #ffffff;
 }
 .modix-ai-send-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
 }
 
 /* ==================== 10. 2D TEXTURE PAINT & GENERATOR STUDIO MODAL ==================== */
@@ -1990,7 +2025,8 @@ button {
 }
 
 @media (max-height: 560px) and (orientation: landscape) {
-  .modix-ai-top-btn {
+  .modix-ai-top-btn,
+  .modix-projects-back-btn {
     height: 19px;
     padding: 0 6px;
     font-size: 9.4px;
@@ -2009,30 +2045,30 @@ button {
 
 /* ==================== 14. STUDIO ACCOUNT AUTH, STARTUP PROJECTS & AI MULTI-REF ==================== */
 .modix-projects-back-btn {
-  height: 22px;
+  height: 24px;
   padding: 0 8px;
   margin-right: 4px;
-  background: #1c1c20;
-  border: 1px solid #383840;
-  border-radius: 5px;
-  color: #f4f4f5;
-  font-size: 10.8px;
-  font-weight: 600;
+  background: #121212;
+  border: 1px solid #222222;
+  border-radius: 4px;
+  color: #dadada;
+  font-size: 11px;
+  font-weight: 500;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   flex-shrink: 0;
-  transition: background 0.14s, border-color 0.14s;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 .modix-projects-back-btn:hover {
-  background: #2b2b32;
-  border-color: #6b6b76;
+  background: #1b1b1b;
+  color: #ffffff;
 }
 
 .modix-btn-spinner {
   width: 14px;
   height: 14px;
-  border: 2px solid rgba(128, 128, 136, 0.35);
+  border: 2px solid rgba(160, 160, 168, 0.3);
   border-top-color: currentColor;
   border-radius: 50%;
   animation: modix-spin 0.7s linear infinite;
@@ -2040,734 +2076,744 @@ button {
   flex-shrink: 0;
 }
 
-/* 14A. Mandatory Account Auth Screen (Landscape Black & White Studio) */
-.modix-auth-screen {
+/* 14A. Pure Black Projects Hub & Account Screen (Identical to Reference Layout) */
+.modix-hub-screen {
   position: fixed;
   inset: 0;
-  background: #050507;
-  color: #fafafa;
+  background: #000000;
+  color: #f2f2f2;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: max(12px, env(safe-area-inset-top, 12px)) max(18px, env(safe-area-inset-right, 18px))
-    max(12px, env(safe-area-inset-bottom, 12px)) max(18px, env(safe-area-inset-left, 18px));
-  overflow-y: auto;
-}
-
-.modix-auth-bg-grid {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.085) 0%, transparent 52%),
-    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-  background-size: 100% 100%, 34px 34px, 34px 34px;
-  mask-image: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.95) 20%, rgba(0, 0, 0, 0.18) 85%);
-  -webkit-mask-image: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.95) 20%, rgba(0, 0, 0, 0.18) 85%);
-}
-
-.modix-auth-panel {
-  position: relative;
-  z-index: 1;
-  width: min(820px, 96vw);
-  background: #0c0c0f;
-  border: 1px solid #26262c;
-  border-radius: 16px;
-  box-shadow:
-    0 30px 80px rgba(0, 0, 0, 0.9),
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
-  display: grid;
-  grid-template-columns: 1.02fr 1.08fr;
-  overflow: hidden;
-}
-
-.modix-auth-showcase {
-  padding: 26px 26px;
-  background: linear-gradient(155deg, #131317 0%, #09090b 65%, #060608 100%);
-  border-right: 1px solid #1f1f25;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 18px;
-}
-
-.modix-auth-brand-top {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-}
-
-.modix-auth-logo-box {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  background: #050507;
-  border: 1px solid #2e2e36;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.65);
-}
-.modix-auth-logo {
-  width: 30px;
-  height: 30px;
-  object-fit: contain;
-  display: block;
-}
-
-.modix-auth-wordmark-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.modix-auth-title {
-  margin: 0;
-  font-size: 21px;
-  font-weight: 800;
-  letter-spacing: -0.025em;
-  color: #ffffff;
-}
-.modix-auth-studio-tag {
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: #ffffff;
-  color: #09090b;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-.modix-auth-tagline {
-  margin: 4px 0 0;
-  font-size: 11.8px;
-  line-height: 1.35;
-  color: #a1a1aa;
-}
-
-.modix-auth-feature-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.modix-auth-feature-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 9px 11px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.028);
-  border: 1px solid #202027;
-}
-.modix-auth-feat-ico {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  background: #19191f;
-  border: 1px solid #2e2e38;
-  color: #ffffff;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.modix-auth-feat-title {
-  font-size: 11.8px;
-  font-weight: 700;
-  color: #f4f4f5;
-}
-.modix-auth-feat-sub {
-  margin-top: 2px;
-  font-size: 10.5px;
-  line-height: 1.3;
-  color: #8e8e98;
-}
-
-.modix-auth-card {
-  padding: 24px 26px;
-  background: #0e0e11;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 13px;
-}
-
-.modix-auth-tabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 5px;
-  background: #070709;
-  border: 1px solid #24242b;
-  padding: 4px;
-  border-radius: 10px;
-}
-.modix-auth-tab {
-  height: 34px;
-  border-radius: 7px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #9ca3af;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  transition: background 0.15s, color 0.15s;
-}
-.modix-auth-tab:hover:not(.active) {
-  color: #f4f4f5;
-  background: rgba(255, 255, 255, 0.04);
-}
-.modix-auth-tab.active {
-  background: #ffffff;
-  color: #09090b;
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.45);
-}
-
-.modix-auth-form {
-  display: flex;
-  flex-direction: column;
-  gap: 11px;
-}
-
-.modix-auth-profile-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-}
-.modix-auth-avatar-btn {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  background: #16161b;
-  border: 1px dashed #4b4b57;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: #d4d4d8;
-  transition: border-color 0.15s, background 0.15s;
-}
-.modix-auth-avatar-btn:hover {
-  border-color: #ffffff;
-  background: #202028;
-}
-.modix-auth-avatar-btn img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.modix-auth-avatar-empty {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.modix-auth-field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.modix-auth-field-lbl {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: #d4d4d8;
-}
-.modix-auth-input-wrap {
-  height: 38px;
-  background: #070709;
-  border: 1px solid #2a2a33;
-  border-radius: 8px;
-  padding: 0 11px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  color: #8e8e99;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.modix-auth-input-wrap:focus-within {
-  border-color: #ffffff;
-  color: #ffffff;
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
-}
-.modix-auth-input-wrap input {
-  flex: 1;
-  min-width: 0;
-  height: 100%;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: #fafafa;
-  font-size: 12.6px;
-}
-.modix-auth-input-wrap input::placeholder {
-  color: #5b5b66;
-}
-.modix-auth-eye-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: 5px;
-  color: #8e8e99;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.modix-auth-eye-btn:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.modix-auth-error {
-  padding: 8px 11px;
-  border-radius: 8px;
-  background: rgba(127, 29, 29, 0.32);
-  border: 1px solid #991b1b;
-  color: #fecaca;
-  font-size: 11.4px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.modix-auth-submit {
-  height: 40px;
-  margin-top: 3px;
-  border-radius: 9px;
-  background: #ffffff;
-  color: #09090b;
-  font-size: 12.8px;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  box-shadow: 0 8px 24px rgba(255, 255, 255, 0.12);
-  transition: background 0.14s, transform 0.1s;
-}
-.modix-auth-submit:hover:not(:disabled) {
-  background: #e4e4e7;
-}
-.modix-auth-submit:active:not(:disabled) {
-  transform: scale(0.99);
-}
-.modix-auth-submit:disabled {
-  opacity: 0.6;
-  cursor: wait;
-}
-
-/* 14B. Mandatory Startup Projects Screen (ONLY Projects & Create Project + Top-Right Profile) */
-.modix-projects-screen {
-  position: fixed;
-  inset: 0;
-  background:
-    radial-gradient(circle at 50% -10%, rgba(255, 255, 255, 0.06) 0%, transparent 50%),
-    #070709;
-  color: #fafafa;
-  display: flex;
-  flex-direction: column;
+  flex-direction: row;
   overflow: hidden;
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
 }
 
-.modix-projects-topbar {
-  height: 56px;
-  padding: 0 22px;
-  background: rgba(12, 12, 15, 0.92);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid #202026;
+.modix-hub-sidebar {
+  width: 206px;
+  min-width: 206px;
+  background: #000000;
+  border-right: 1px solid #1b1b1b;
+  padding: max(26px, env(safe-area-inset-top, 26px)) 16px max(20px, env(safe-area-inset-bottom, 20px));
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-shrink: 0;
+  flex-direction: column;
+  user-select: none;
 }
 
-.modix-projects-brand {
+.modix-hub-brand {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  padding: 2px 0 24px;
 }
-.modix-projects-logo {
-  width: 24px;
-  height: 24px;
+
+.modix-hub-brand-mark {
+  width: 72px;
+  height: 72px;
   object-fit: contain;
   display: block;
 }
-.modix-projects-brand-name {
-  font-size: 15.5px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: #ffffff;
-}
-.modix-projects-brand-sep {
-  width: 1px;
-  height: 16px;
-  background: #2c2c34;
-}
-.modix-projects-brand-sub {
-  font-size: 13px;
-  font-weight: 600;
-  color: #b4b4be;
-}
-.modix-projects-count-pill {
-  height: 19px;
-  min-width: 22px;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: #1b1b21;
-  border: 1px solid #2f2f38;
-  color: #e4e4e7;
-  font-size: 10.5px;
+
+.modix-hub-brand-title {
+  margin-top: 8px;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 23px;
   font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  color: #f4f4f4;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
 }
 
-.modix-projects-topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-/* Top-Right Account Photo + Name Widget */
-.modix-account-chip {
-  height: 40px;
-  padding: 4px 12px 4px 5px;
-  background: #131317;
-  border: 1px solid #2b2b34;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  color: #fafafa;
-  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
-}
-.modix-account-chip:hover {
-  background: #1c1c22;
-  border-color: #63636e;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-}
-.modix-account-avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 1.5px solid rgba(255, 255, 255, 0.5);
-  background: #222228;
-  flex-shrink: 0;
-  display: block;
-}
-.modix-account-meta {
+.modix-hub-nav {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  line-height: 1.18;
-  max-width: 195px;
-}
-.modix-account-name {
-  font-size: 12px;
-  font-weight: 700;
-  color: #ffffff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-.modix-account-email {
-  font-size: 10px;
-  color: #9ca3af;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-.modix-account-caret {
-  color: #9ca3af;
-  display: inline-flex;
-  align-items: center;
+  gap: 6px;
 }
 
-.modix-projects-main {
-  flex: 1 1 auto;
-  overflow-y: auto;
-  padding: 22px 24px 36px;
-  max-width: 1280px;
+.modix-hub-nav-item {
   width: 100%;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-
-.modix-projects-hero {
+  height: 44px;
+  padding: 0 15px;
+  border-radius: 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #e6e6e6;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 14.5px;
+  font-weight: 400;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  flex-wrap: wrap;
+  text-align: left;
+  transition: background 0.14s, color 0.14s;
 }
-.modix-projects-heading {
-  margin: 0;
-  font-size: 21px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+.modix-hub-nav-item:hover {
+  background: #141414;
   color: #ffffff;
 }
-.modix-projects-count {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: #9ca3af;
+.modix-hub-nav-item.active {
+  background: #262626;
+  color: #ffffff;
 }
 
-.modix-create-project-btn {
-  height: 38px;
-  padding: 0 16px;
-  border-radius: 9px;
-  background: #ffffff;
-  color: #09090b;
-  font-size: 12.5px;
-  font-weight: 800;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  box-shadow: 0 6px 20px rgba(255, 255, 255, 0.12);
-  transition: background 0.14s, transform 0.1s;
-}
-.modix-create-project-btn:hover {
-  background: #e4e4e7;
-}
-.modix-create-project-btn:active {
-  transform: scale(0.98);
-}
-
-.modix-projects-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(228px, 1fr));
-  gap: 15px;
-}
-
-.modix-project-card {
-  background: #101014;
-  border: 1px solid #24242c;
-  border-radius: 12px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  cursor: pointer;
-  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
-  min-height: 194px;
-  text-align: left;
-}
-.modix-project-card:hover {
-  border-color: #71717a;
-  transform: translateY(-2px);
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.68);
-}
-
-.modix-project-create-card {
-  border: 1.5px dashed #383844;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 20px;
-  gap: 9px;
-}
-.modix-project-create-card:hover {
-  border-color: #ffffff;
-  background: rgba(255, 255, 255, 0.055);
-}
-.modix-project-create-plus {
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: #ffffff;
-  color: #09090b;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 6px 18px rgba(255, 255, 255, 0.16);
-}
-.modix-project-create-plus svg {
+.modix-hub-nav-ico {
   width: 20px;
   height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: currentColor;
 }
-.modix-project-create-label {
-  font-size: 13.8px;
-  font-weight: 800;
+
+.modix-hub-sidebar-bottom {
+  margin-top: auto;
+  padding-top: 16px;
+}
+
+.modix-hub-logout-btn {
+  width: 100%;
+  height: 44px;
+  padding: 0 15px;
+  border-radius: 12px;
+  background: #101010;
+  border: 1px solid #191919;
+  color: #eaeaea;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 14.5px;
+  font-weight: 400;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+.modix-hub-logout-btn:hover {
+  background: #1c1c1c;
+  border-color: #2a2a2a;
   color: #ffffff;
 }
-.modix-project-create-hint {
-  font-size: 11px;
-  color: #9ca3af;
-}
 
-.modix-project-skeleton {
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: #a1a1aa;
+.modix-hub-auth-foot-note {
+  padding: 8px 12px;
+  font-family: Georgia, "Times New Roman", Times, serif;
   font-size: 12px;
-  cursor: default;
+  color: #6e6e6e;
+  text-align: center;
 }
 
-.modix-project-thumb {
-  position: relative;
-  height: 126px;
-  background: radial-gradient(circle at 50% 45%, #1d1d24 0%, #0b0b0e 100%);
-  border-bottom: 1px solid #1f1f26;
+/* Main Content Area */
+.modix-hub-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: #000000;
+  padding: max(30px, env(safe-area-inset-top, 30px)) 38px max(32px, env(safe-area-inset-bottom, 32px));
+  overflow-y: auto;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-.modix-project-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.modix-project-thumb-placeholder {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  color: #71717a;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.modix-project-thumb-grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
-  background-size: 20px 20px;
-}
-.modix-project-thumb-placeholder svg {
-  position: relative;
-  z-index: 1;
-  width: 34px;
-  height: 34px;
-}
-.modix-project-obj-badge {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: rgba(9, 9, 11, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #e4e4e7;
-  font-size: 9.8px;
-  font-weight: 600;
+  flex-direction: column;
 }
 
-.modix-project-body {
-  padding: 11px 13px;
+.modix-hub-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  flex: 1;
-}
-.modix-project-meta {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.modix-project-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: #fafafa;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.modix-project-sub {
-  font-size: 10.6px;
-  color: #8e8e98;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  gap: 16px;
+  margin-bottom: 26px;
 }
 
-.modix-project-actions {
+.modix-hub-heading {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 40px;
+  font-weight: 700;
+  color: #f4f4f4;
+  letter-spacing: -0.015em;
+  line-height: 1.08;
+}
+
+.modix-hub-header-actions {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
+  gap: 12px;
 }
-.modix-project-act-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  background: #18181e;
-  border: 1px solid #2b2b35;
-  color: #d4d4d8;
+
+.modix-hub-search-box input {
+  width: 210px;
+  height: 38px;
+  background: #111111;
+  border: 1px solid #262626;
+  border-radius: 10px;
+  padding: 0 12px;
+  color: #f2f2f2;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 13.5px;
+  outline: none;
+  transition: border-color 0.14s;
+}
+.modix-hub-search-box input::placeholder {
+  color: #737373;
+}
+.modix-hub-search-box input:focus {
+  border-color: #454545;
+}
+
+.modix-hub-search-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: transparent;
+  color: #f2f2f2;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   transition: background 0.14s, color 0.14s;
 }
-.modix-project-act-btn:hover {
-  background: #2a2a33;
+.modix-hub-search-btn:hover,
+.modix-hub-search-btn.active {
+  background: #171717;
   color: #ffffff;
 }
-.modix-project-act-btn.danger:hover {
+
+.modix-hub-plus-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #1d1d1d;
+  border: 1px solid #282828;
+  color: #f4f4f4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.14s, border-color 0.14s, transform 0.1s;
+}
+.modix-hub-plus-btn svg {
+  width: 18px;
+  height: 18px;
+}
+.modix-hub-plus-btn:hover {
+  background: #292929;
+  border-color: #3a3a3a;
+  color: #ffffff;
+}
+.modix-hub-plus-btn:active {
+  transform: scale(0.97);
+}
+
+/* Projects Grid & Project Card (Matches Reference Card 1:1) */
+.modix-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 370px));
+  gap: 20px;
+  align-items: start;
+}
+
+.modix-hub-card {
+  background: #0d0d0d;
+  border: 1px solid #262626;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+}
+.modix-hub-card:hover {
+  border-color: #424242;
+  transform: translateY(-1px);
+}
+
+.modix-hub-card-thumb {
+  position: relative;
+  aspect-ratio: 16 / 8.6;
+  background: #1c1c1c;
+  border-bottom: 1px solid #1a1a1a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.modix-hub-card-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.modix-hub-card-placeholder {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  color: #6b6b6b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modix-hub-card-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.modix-hub-card-placeholder svg {
+  position: relative;
+  z-index: 1;
+  width: 34px;
+  height: 34px;
+}
+
+.modix-hub-card-footer {
+  padding: 12px 16px 13px;
+  background: #0d0d0d;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.modix-hub-card-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.modix-hub-card-title {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 16px;
+  font-weight: 400;
+  color: #f2f2f2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modix-hub-card-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 12.5px;
+  color: #a0a0a0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modix-hub-card-cal {
+  display: inline-flex;
+  align-items: center;
+  color: #969696;
+  flex-shrink: 0;
+}
+
+.modix-hub-card-more {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: transparent;
+  color: #e4e4e4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.14s, color 0.14s;
+}
+.modix-hub-card-more:hover {
+  background: #1f1f1f;
+  color: #ffffff;
+}
+
+/* Empty State (Logged-in account with 0 projects) */
+.modix-hub-empty-state {
+  max-width: 440px;
+  padding: 26px 24px;
+  background: #0b0b0b;
+  border: 1px solid #222222;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  color: #b0b0b0;
+  font-size: 13px;
+}
+.modix-hub-empty-title {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 17px;
+  color: #f2f2f2;
+}
+.modix-hub-empty-sub {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #8f8f8f;
+}
+.modix-hub-empty-btn {
+  margin-top: 4px;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 10px;
+  background: #242424;
+  border: 1px solid #333333;
+  color: #f4f4f4;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 13.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.14s, border-color 0.14s;
+}
+.modix-hub-empty-btn:hover {
+  background: #2f2f2f;
+  border-color: #454545;
+}
+
+/* 14B. Account Auth Form & Settings Cards (Same Pure Black + Serif Visual Style) */
+.modix-hub-auth-wrap {
+  max-width: 450px;
+  width: 100%;
+}
+
+.modix-hub-auth-card {
+  background: #0b0b0b;
+  border: 1px solid #242424;
+  border-radius: 12px;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modix-hub-auth-desc {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 13.5px;
+  line-height: 1.48;
+  color: #a3a3a3;
+}
+
+.modix-hub-alert {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(127, 29, 29, 0.25);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fecaca;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modix-hub-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.modix-hub-avatar-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #111111;
+  border: 1px solid #222222;
+  border-radius: 10px;
+}
+.modix-hub-avatar-img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #333333;
+  flex-shrink: 0;
+}
+.modix-hub-avatar-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+.modix-hub-avatar-lbl {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 12px;
+  color: #9e9e9e;
+}
+
+.modix-hub-btn-subtle {
+  height: 34px;
+  padding: 0 13px;
+  border-radius: 9px;
+  background: #1a1a1a;
+  border: 1px solid #2b2b2b;
+  color: #ececec;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 12.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: background 0.14s, border-color 0.14s;
+}
+.modix-hub-btn-subtle:hover {
+  background: #252525;
+  border-color: #3d3d3d;
+  color: #ffffff;
+}
+
+.modix-hub-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.modix-hub-field-label {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 13px;
+  color: #d6d6d6;
+}
+
+.modix-hub-input-box {
+  height: 40px;
+  background: #121212;
+  border: 1px solid #262626;
+  border-radius: 10px;
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  transition: border-color 0.14s, background 0.14s;
+}
+.modix-hub-input-box:focus-within {
+  border-color: #4a4a4a;
+  background: #151515;
+}
+.modix-hub-input-ico {
+  color: #828282;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.modix-hub-input-box input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  border: none;
+  color: #f4f4f4;
+  font-size: 13px;
+  outline: none;
+}
+.modix-hub-input-box input::placeholder {
+  color: #666666;
+}
+
+.modix-hub-eye-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  color: #8f8f8f;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.modix-hub-eye-btn:hover {
+  background: #202020;
+  color: #ffffff;
+}
+
+.modix-hub-auth-actions {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.modix-hub-submit-btn {
+  height: 42px;
+  border-radius: 10px;
+  background: #262626;
+  border: 1px solid #383838;
+  color: #f5f5f5;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 14.5px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.14s, border-color 0.14s;
+}
+.modix-hub-submit-btn:hover:not(:disabled) {
+  background: #323232;
+  border-color: #4c4c4c;
+  color: #ffffff;
+}
+.modix-hub-submit-btn:disabled {
+  opacity: 0.55;
+}
+
+.modix-hub-switch-link {
+  align-self: center;
+  padding: 4px 8px;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 12.5px;
+  color: #9e9e9e;
+  transition: color 0.14s;
+}
+.modix-hub-switch-link:hover {
+  color: #ffffff;
+}
+
+/* Settings & About Cards */
+.modix-hub-settings-stack {
+  max-width: 580px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modix-hub-settings-card {
+  background: #0d0d0d;
+  border: 1px solid #262626;
+  border-radius: 12px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.modix-hub-settings-card.danger-zone {
+  border-color: #3a1d1d;
+}
+
+.modix-hub-profile-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.modix-hub-profile-avatar {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #333333;
+  flex-shrink: 0;
+}
+.modix-hub-profile-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.modix-hub-profile-name {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 18px;
+  color: #f4f4f4;
+}
+.modix-hub-profile-email {
+  font-size: 12.5px;
+  color: #969696;
+}
+
+.modix-hub-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.modix-hub-settings-title {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 16px;
+  color: #f2f2f2;
+}
+.modix-hub-settings-sub {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #9a9a9a;
+}
+
+.modix-hub-key-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.modix-hub-key-input {
+  flex: 1;
+  min-width: 190px;
+  height: 34px;
+  background: #141414;
+  border: 1px solid #282828;
+  border-radius: 9px;
+  padding: 0 11px;
+  color: #f2f2f2;
+  font-size: 12.5px;
+  outline: none;
+}
+.modix-hub-key-input:focus {
+  border-color: #484848;
+}
+
+.modix-hub-btn-danger {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 9px;
+  background: #231111;
+  border: 1px solid #4d2020;
+  color: #fca5a5;
+  font-family: Georgia, "Times New Roman", Times, serif;
+  font-size: 12.8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+.modix-hub-btn-danger:hover {
   background: #7f1d1d;
   border-color: #991b1b;
   color: #ffffff;
 }
 
-/* 14C. Multi-Image Reference Strip & Vision Controls inside AI Panel */
+/* 14C. Multi-Image Reference Strip & Vision Controls inside Clean AI Panel */
 .modix-ai-drawer.drag-over {
-  border-color: #ffffff;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 18px 48px rgba(0, 0, 0, 0.9);
+  border-color: #52525b;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.18), 0 20px 56px rgba(0, 0, 0, 0.9);
 }
 
 .modix-ai-attach-btn {
   position: relative;
   width: 32px;
-  height: 30px;
-  border-radius: 5px;
-  background: #18181d;
-  border: 1px solid #32323c;
-  color: #e4e4e7;
+  height: 32px;
+  border-radius: 7px;
+  background: #141416;
+  border: 1px solid #252529;
+  color: #c4c4cc;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: background 0.14s, border-color 0.14s;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 .modix-ai-attach-btn:hover:not(:disabled) {
-  background: #272730;
-  border-color: #ffffff;
+  background: #1f1f24;
+  border-color: #3a3a42;
   color: #ffffff;
 }
 .modix-ai-attach-btn.has-refs {
-  background: #ffffff;
-  border-color: #ffffff;
-  color: #09090b;
+  background: #242429;
+  border-color: #46464f;
+  color: #ffffff;
 }
 .modix-ai-attach-btn .attach-count {
   position: absolute;
-  top: -5px;
-  right: -5px;
+  top: -4px;
+  right: -4px;
   min-width: 15px;
   height: 15px;
   padding: 0 3px;
   border-radius: 999px;
-  background: #2563eb;
-  color: #ffffff;
+  background: #e4e4e7;
+  color: #09090b;
   font-size: 9px;
   font-weight: 800;
   display: inline-flex;
@@ -2776,30 +2822,30 @@ button {
 }
 
 .modix-ai-ref-strip {
-  padding: 6px 8px;
-  background: #111115;
-  border-top: 1px solid #24242c;
+  padding: 7px 10px;
+  background: #0d0d0f;
+  border-top: 1px solid #1b1b1f;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
 }
 .modix-ai-ref-hdr {
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-size: 10px;
-  font-weight: 700;
-  color: #e4e4e7;
+  font-weight: 600;
+  color: #9e9ea6;
 }
 .modix-ai-ref-clear {
   font-size: 10px;
-  color: #a1a1aa;
-  padding: 1px 5px;
+  color: #8e8e96;
+  padding: 1px 6px;
   border-radius: 4px;
 }
 .modix-ai-ref-clear:hover {
   color: #ffffff;
-  background: #27272f;
+  background: #1f1f24;
 }
 .modix-ai-ref-list {
   display: flex;
@@ -2810,12 +2856,12 @@ button {
 }
 .modix-ai-ref-item {
   position: relative;
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   border-radius: 6px;
-  border: 1px solid #3f3f4a;
+  border: 1px solid #2e2e34;
   overflow: hidden;
-  background: #1b1b22;
+  background: #16161a;
   flex-shrink: 0;
 }
 .modix-ai-ref-item img {
@@ -2839,8 +2885,8 @@ button {
   position: absolute;
   top: 2px;
   right: 2px;
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
   background: rgba(9, 9, 11, 0.85);
   color: #ffffff;
@@ -2849,28 +2895,27 @@ button {
   justify-content: center;
 }
 .modix-ai-ref-rm svg {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
 }
 .modix-ai-ref-rm:hover {
   background: #dc2626;
 }
 .modix-ai-ref-add-more {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   border-radius: 6px;
-  border: 1px dashed #4b4b57;
-  background: rgba(255, 255, 255, 0.03);
-  color: #d4d4d8;
+  border: 1px dashed #34343c;
+  background: #121215;
+  color: #a1a1aa;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
 .modix-ai-ref-add-more:hover {
-  border-color: #ffffff;
+  border-color: #6b6b76;
   color: #ffffff;
-  background: rgba(255, 255, 255, 0.07);
 }
 
 .modix-ai-msg-refs {
@@ -2881,12 +2926,12 @@ button {
 }
 .modix-ai-msg-ref-thumb {
   position: relative;
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
   border-radius: 6px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  background: #18181c;
+  border: 1px solid #2f2f36;
+  background: #16161a;
 }
 .modix-ai-msg-ref-thumb img {
   width: 100%;
@@ -2900,87 +2945,91 @@ button {
   bottom: 2px;
   padding: 0 4px;
   border-radius: 3px;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(0, 0, 0, 0.78);
   color: #ffffff;
   font-size: 8.5px;
   font-weight: 700;
 }
 
-/* Responsive adaptation for compact mobile landscape & portrait */
-@media (max-width: 720px) {
-  .modix-auth-panel {
-    grid-template-columns: 1fr;
-    max-width: 440px;
-  }
-  .modix-auth-showcase {
-    padding: 16px 18px;
-    border-right: none;
-    border-bottom: 1px solid #1f1f25;
-  }
-  .modix-auth-feature-list {
-    display: none;
-  }
-  .modix-auth-card {
-    padding: 18px;
-  }
-}
-
+/* Responsive adaptation for compact phone landscape & narrow viewports */
 @media (max-height: 480px) and (orientation: landscape) {
-  .modix-auth-panel {
-    width: min(780px, 96vw);
+  .modix-hub-sidebar {
+    width: 176px;
+    min-width: 176px;
+    padding: 14px 12px;
   }
-  .modix-auth-showcase {
+  .modix-hub-brand {
+    padding: 0 0 12px;
+  }
+  .modix-hub-brand-mark {
+    width: 48px;
+    height: 48px;
+  }
+  .modix-hub-brand-title {
+    margin-top: 4px;
+    font-size: 18px;
+  }
+  .modix-hub-nav {
+    gap: 3px;
+  }
+  .modix-hub-nav-item,
+  .modix-hub-logout-btn {
+    height: 36px;
+    padding: 0 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    gap: 10px;
+  }
+  .modix-hub-main {
+    padding: 16px 22px 20px;
+  }
+  .modix-hub-header {
+    margin-bottom: 14px;
+  }
+  .modix-hub-heading {
+    font-size: 28px;
+  }
+  .modix-hub-grid {
+    grid-template-columns: repeat(auto-fill, minmax(230px, 310px));
+    gap: 14px;
+  }
+  .modix-hub-auth-card {
     padding: 14px 18px;
     gap: 10px;
   }
-  .modix-auth-feature-list {
-    gap: 6px;
+  .modix-hub-auth-form {
+    gap: 9px;
   }
-  .modix-auth-feature-item {
-    padding: 6px 9px;
-  }
-  .modix-auth-card {
-    padding: 14px 18px;
-    gap: 8px;
-  }
-  .modix-auth-tabs {
-    padding: 3px;
-  }
-  .modix-auth-tab {
-    height: 29px;
-    font-size: 11.2px;
-  }
-  .modix-auth-form {
-    gap: 7px;
-  }
-  .modix-auth-input-wrap {
-    height: 33px;
-  }
-  .modix-auth-submit {
+  .modix-hub-input-box {
     height: 35px;
-    font-size: 12px;
   }
-  .modix-projects-topbar {
-    height: 46px;
-    padding: 0 14px;
+  .modix-hub-submit-btn {
+    height: 37px;
+    font-size: 13.5px;
   }
-  .modix-account-chip {
-    height: 34px;
+}
+
+@media (max-width: 640px) {
+  .modix-hub-sidebar {
+    width: 158px;
+    min-width: 158px;
+    padding: 16px 10px;
   }
-  .modix-account-avatar {
-    width: 25px;
-    height: 25px;
+  .modix-hub-brand-mark {
+    width: 52px;
+    height: 52px;
   }
-  .modix-projects-main {
-    padding: 12px 16px 22px;
-    gap: 12px;
+  .modix-hub-brand-title {
+    font-size: 19px;
   }
-  .modix-projects-heading {
-    font-size: 17px;
+  .modix-hub-main {
+    padding: 20px 18px;
   }
-  .modix-create-project-btn {
-    height: 33px;
-    font-size: 11.8px;
+  .modix-hub-heading {
+    font-size: 28px;
+  }
+  .modix-hub-grid {
+    grid-template-columns: 1fr;
   }
 }
 
