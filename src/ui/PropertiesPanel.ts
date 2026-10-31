@@ -272,7 +272,7 @@ export class PropertiesPanel {
     const bc = document.createElement('div');
     bc.className = 'props-breadcrumb';
     bc.innerHTML = `
-      <div class="props-breadcrumb-left">${Icons.cubeSmall}<span>${escapeHtml(active.name)}</span></div>
+      <div class="props-breadcrumb-left">${Icons.cubeSmall}<span data-no-i18n="true">${escapeHtml(active.name)}</span></div>
       <span style="color:#aaa;">${Icons.pin}</span>
     `;
     this.inspectorEl.appendChild(bc);
@@ -284,7 +284,7 @@ export class PropertiesPanel {
       <span style="display:inline-flex;align-items:center;gap:2px;color:#ccc;">
         ${Icons.modeObject}${Icons.chevronDown}
       </span>
-      <input type="text" class="props-name-input" value="${escapeHtml(active.name)}" aria-label="Object Name" />
+      <input type="text" class="props-name-input" data-no-i18n="true" value="${escapeHtml(active.name)}" aria-label="Object Name" />
     `;
     const nameInp = nameRow.querySelector<HTMLInputElement>('input')!;
     nameInp.addEventListener('focus', () => {
@@ -468,7 +468,7 @@ export class PropertiesPanel {
     const opsHdr = document.createElement('button');
     opsHdr.type = 'button';
     opsHdr.className = 'props-sec-hdr';
-    opsHdr.innerHTML = `${this.quickOpsExpanded ? Icons.chevronDown : Icons.chevronRight}<span>Ações &amp; Grupos (${escapeHtml(active.collection)})</span>`;
+    opsHdr.innerHTML = `${this.quickOpsExpanded ? Icons.chevronDown : Icons.chevronRight}<span>Ações &amp; Grupos</span> (<span data-no-i18n="true">${escapeHtml(active.collection)}</span>)`;
     opsHdr.addEventListener('click', () => {
       this.quickOpsExpanded = !this.quickOpsExpanded;
       this.sync();
@@ -480,16 +480,21 @@ export class PropertiesPanel {
       opsBody.className = 'props-sec-content';
       opsBody.innerHTML = `
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+          <button type="button" class="modix-btn primary" data-q="fuse" style="grid-column:span 2;">${Icons.toolSculptSmooth}<span>Fundir em Mesh Suave</span></button>
           <button type="button" class="modix-btn" data-q="copy">${Icons.copy}<span>Copiar</span></button>
           <button type="button" class="modix-btn" data-q="paste">${Icons.paste}<span>Colar</span></button>
           <button type="button" class="modix-btn" data-q="cut">${Icons.scissors}<span>Recortar</span></button>
           <button type="button" class="modix-btn" data-q="slice">${Icons.slice3d}<span>Fatiar 3D</span></button>
-          <button type="button" class="modix-btn" data-q="join">${Icons.join}<span>Unir (${this.engine.state.selectedIds.length})</span></button>
+          <button type="button" class="modix-btn" data-q="join">${Icons.join}<span>Unir Selecionados</span></button>
           <button type="button" class="modix-btn" data-q="group">${Icons.folderPlus}<span>Novo Grupo</span></button>
           <button type="button" class="modix-btn" data-q="tex">${Icons.palette}<span>Textura 2D</span></button>
           <button type="button" class="modix-btn danger" data-q="del">${Icons.trash}<span>Deletar</span></button>
         </div>
       `;
+      opsBody.querySelector('[data-q="fuse"]')?.addEventListener('click', () => {
+        const fused = this.engine.fuseObjectsToSmoothMesh();
+        showToast(fused ? `"${fused.name}"` : 'Selecione 1+ malha');
+      });
       opsBody.querySelector('[data-q="copy"]')?.addEventListener('click', () => {
         const n = this.engine.copySelected();
         showToast(`${n} objeto(s) copiado(s)`);
@@ -548,7 +553,7 @@ export class PropertiesPanel {
           active
             ? `<div style="display:flex;flex-direction:column;gap:4px;margin-top:2px;">
                 <span style="color:#aaa;font-size:10.5px;">Mover selecionado(s) para grupo:</span>
-                <select id="col-move-sel" class="xf-select">
+                <select id="col-move-sel" class="xf-select" data-no-i18n="true">
                   ${st.collections
                     .map(
                       (c) =>
@@ -572,7 +577,7 @@ export class PropertiesPanel {
       item.style.cssText =
         'display:flex;align-items:center;justify-content:space-between;background:#1d1d1d;padding:4px 6px;border-radius:4px;gap:4px;';
       item.innerHTML = `
-        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;">${Icons.folder}<b>${escapeHtml(col.name)}</b> (${count})</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;">${Icons.folder}<b data-no-i18n="true">${escapeHtml(col.name)}</b> (${count})</span>
         <span style="display:flex;gap:3px;">
           <button type="button" class="modix-btn" data-ren style="height:19px;padding:0 5px;" title="Renomear Grupo">${Icons.edit}</button>
           ${
@@ -641,15 +646,15 @@ export class PropertiesPanel {
     const wrap = document.createElement('div');
     wrap.className = 'props-section';
     wrap.innerHTML = `
-      <div class="props-sec-hdr">${Icons.chevronDown}<span>Texturas 2D &amp; Pintura 3D — ${escapeHtml(active.name)}</span></div>
+      <div class="props-sec-hdr">${Icons.chevronDown}<span>Texturas 2D &amp; Pintura 3D</span> — <span data-no-i18n="true">${escapeHtml(active.name)}</span></div>
       <div class="props-sec-content" style="display:flex;flex-direction:column;gap:7px;">
         ${
           m.textureDataUrl
             ? `<div style="display:flex;gap:8px;align-items:center;background:#161616;padding:6px;border-radius:4px;border:1px solid #2e2e2e;">
                 <img src="${m.textureDataUrl}" alt="Tex" style="width:52px;height:52px;border-radius:3px;object-fit:cover;border:1px solid #444;" />
                 <div style="flex:1;min-width:0;">
-                  <div style="font-weight:600;color:#e5e7eb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.textureName || 'Texture_512.png')}</div>
-                  <div style="font-size:10px;color:#9ca3af;">UV: ${m.uvProjection || 'box'} (${m.repeatX ?? 1}×${m.repeatY ?? 1})</div>
+                  <div data-no-i18n="true" style="font-weight:600;color:#e5e7eb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.textureName || 'Texture_512.png')}</div>
+                  <div data-no-i18n="true" style="font-size:10px;color:#9ca3af;">UV: ${m.uvProjection || 'box'} (${m.repeatX ?? 1}×${m.repeatY ?? 1})</div>
                 </div>
                </div>`
             : `<div style="color:#9ca3af;font-size:10.5px;">Nenhuma textura aplicada ainda. Crie, importe ou desenhe abaixo!</div>`
@@ -955,7 +960,7 @@ export class PropertiesPanel {
     const wrap = document.createElement('div');
     wrap.className = 'props-section';
     wrap.innerHTML = `
-      <div class="props-sec-hdr">${Icons.chevronDown}<span>Principled BSDF — ${escapeHtml(m.name)}</span></div>
+      <div class="props-sec-hdr">${Icons.chevronDown}<span>Principled BSDF</span> — <span data-no-i18n="true">${escapeHtml(m.name)}</span></div>
       <div class="props-sec-content" style="display:flex;flex-direction:column;gap:8px;">
         <label style="display:flex;justify-content:space-between;align-items:center;">
           <span>Base Color</span>
@@ -1052,13 +1057,18 @@ export class PropertiesPanel {
             <button type="button" class="modix-btn" data-op="shade_flat">Shade Flat</button>
           </div>
           <div class="menu-sep"></div>
-          <button type="button" class="modix-btn primary" id="mesh-slice-btn">${Icons.slice3d}<span>Recortar / Fatiar Malha 3D</span></button>
+          <button type="button" class="modix-btn primary" id="mesh-fuse-btn">${Icons.toolSculptSmooth}<span>Fundir em Mesh Suave</span></button>
+          <button type="button" class="modix-btn" id="mesh-slice-btn">${Icons.slice3d}<span>Recortar / Fatiar Malha 3D</span></button>
           <div style="display:flex;gap:4px;">
             <button type="button" class="modix-btn" id="mesh-join-btn" style="flex:1;">${Icons.join}<span>Unir Selecionados</span></button>
             <button type="button" class="modix-btn" id="mesh-sep-btn" style="flex:1;">${Icons.separate}<span>Separar Partes</span></button>
           </div>
         </div>
       `;
+      wrap.querySelector('#mesh-fuse-btn')?.addEventListener('click', () => {
+        const fused = this.engine.fuseObjectsToSmoothMesh();
+        showToast(fused ? `"${fused.name}"` : 'Selecione 1+ malha');
+      });
       wrap.querySelectorAll<HTMLButtonElement>('[data-op]').forEach((b) => {
         b.addEventListener('click', () => {
           const op = b.dataset.op as
@@ -1228,7 +1238,7 @@ export class PropertiesPanel {
     wrap.innerHTML = `
       <div class="props-sec-hdr">${Icons.chevronDown}<span style="text-transform:capitalize;">${tab.replace('_', ' ')} Properties</span></div>
       <div class="props-sec-content" style="display:flex;flex-direction:column;gap:6px;color:#ccc;">
-        <div>Scene: <strong>${escapeHtml(this.engine.state.sceneName)}</strong></div>
+        <div><span>Scene:</span> <strong data-no-i18n="true">${escapeHtml(this.engine.state.sceneName)}</strong></div>
         <div>Groups / Collections: <strong>${this.engine.state.collections.length}</strong></div>
         <div>Objects: <strong>${this.engine.state.objects.length}</strong></div>
         <div>Vertices: <strong>${stats.verts}</strong> | Faces: <strong>${stats.faces}</strong></div>

@@ -3149,3 +3149,226 @@ button {
   line-height: 1.35;
   color: #a1a1aa;
 }
+
+/* ============================================================================
+   PHASE 6: WORLD LANGUAGE SELECTOR MODAL & FRONTIER AI MODEL SELECTOR
+   ============================================================================ */
+
+.modix-hub-lang-pill {
+  height: 36px;
+  padding: 0 13px;
+  border-radius: 999px;
+  background: #0d0d0d;
+  border: 1px solid #262626;
+  color: #e4e4e7;
+  font-size: 12px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+  max-width: 190px;
+}
+.modix-hub-lang-pill span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modix-hub-lang-pill:hover {
+  background: #171717;
+  border-color: #404040;
+  color: #ffffff;
+}
+
+.modix-hub-model-select,
+.modix-ai-model-select {
+  width: 100%;
+  height: 32px;
+  padding: 0 9px;
+  border-radius: 7px;
+  background: #09090b;
+  border: 1px solid #27272a;
+  color: #f4f4f5;
+  font-size: 11.5px;
+  outline: none;
+  cursor: pointer;
+}
+.modix-hub-model-select:focus,
+.modix-ai-model-select:focus {
+  border-color: #71717a;
+}
+
+.modix-lang-modal-backdrop {
+  z-index: 340;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(4px);
+}
+
+.modix-lang-modal {
+  width: min(470px, 92vw);
+  max-height: min(82vh, 520px);
+  background: #080809;
+  border: 1px solid #262626;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.92);
+}
+
+.modix-lang-modal-hdr {
+  padding: 13px 16px;
+  background: #050506;
+  border-bottom: 1px solid #1c1c1e;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.modix-lang-modal-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.modix-lang-search-wrap {
+  margin: 12px 14px 8px;
+  height: 36px;
+  padding: 0 11px;
+  background: #101012;
+  border: 1px solid #27272a;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.modix-lang-search-wrap:focus-within {
+  border-color: #71717a;
+}
+.modix-lang-search-ico {
+  color: #8f8f96;
+  display: inline-flex;
+  align-items: center;
+}
+.modix-lang-search-wrap input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #f4f4f5;
+  font-size: 12.5px;
+}
+.modix-lang-clear-q {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #a1a1aa;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.modix-lang-clear-q:hover {
+  background: #222226;
+  color: #ffffff;
+}
+
+.modix-lang-sync-bar {
+  margin: 0 14px 8px;
+  padding: 7px 11px;
+  border-radius: 8px;
+  background: #131316;
+  border: 1px solid #27272a;
+  color: #e4e4e7;
+  font-size: 11.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.modix-lang-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.modix-lang-empty {
+  padding: 28px 14px;
+  text-align: center;
+  color: #71717a;
+  font-size: 12px;
+}
+
+.modix-lang-item {
+  width: 100%;
+  padding: 8px 11px;
+  border-radius: 9px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #e4e4e7;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.modix-lang-item:hover {
+  background: #141417;
+  border-color: #242429;
+}
+.modix-lang-item.active {
+  background: #18181b;
+  border-color: #52525b;
+  color: #ffffff;
+}
+
+.modix-lang-item-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.modix-lang-native {
+  font-size: 12.8px;
+  font-weight: 600;
+  color: #f4f4f5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modix-lang-sub {
+  font-size: 10.8px;
+  color: #8f8f96;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.modix-lang-check {
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.modix-lang-code {
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #71717a;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: #121215;
+  border: 1px solid #222226;
+}
+

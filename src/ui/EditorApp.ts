@@ -14,6 +14,12 @@ import {
   type OBJExportOptions
 } from '../engine/Exporters';
 import { ModixEngine } from '../engine/ModixEngine';
+import {
+  onLanguageChange,
+  openLanguageSelectorModal,
+  refreshEntireDocumentLanguage,
+  tr
+} from '../i18n/I18nService';
 import { Icons } from '../icons/blenderIcons';
 import {
   saveUserProject,
@@ -75,6 +81,7 @@ export class EditorApp {
   private autoSaveTimer: number | undefined;
   private keydownHandler?: (e: KeyboardEvent) => void;
   private unsubscribeEngine?: () => void;
+  private unsubscribeLang?: () => void;
 
   private wsBarEl!: HTMLElement;
   private vpHeaderEl!: HTMLElement;
@@ -118,9 +125,9 @@ export class EditorApp {
                  </button>`
               : ''
           }
-          <button type="button" class="modix-brand-btn" id="modix-app-menu-btn" title="Modix 3D Menu">
+          <button type="button" class="modix-brand-btn" id="modix-app-menu-btn" title="Modix 3D">
             <img src="./brand/modix-mark-white.png" alt="Modix" class="modix-brand-icon" />
-            <span class="modix-brand-title">Modix</span>
+            <span class="modix-brand-title" data-no-i18n="true">Modix</span>
           </button>
 
           <nav class="modix-workspaces" id="modix-ws-tabs"></nav>
@@ -130,10 +137,10 @@ export class EditorApp {
               <span class="ai-star">${Icons.sparkles}</span><span>IA / Agente</span>
             </button>
             <button type="button" class="modix-scene-pill" id="btn-scene-pill">
-              ${Icons.scene}<span id="lbl-scene-name">Scene</span><span class="pill-chevron">${Icons.chevronDown}</span>
+              ${Icons.scene}<span id="lbl-scene-name" data-no-i18n="true">Scene</span><span class="pill-chevron">${Icons.chevronDown}</span>
             </button>
             <button type="button" class="modix-scene-pill" id="btn-viewlayer-pill">
-              ${Icons.viewLayer}<span id="lbl-vl-name">ViewLayer</span><span class="pill-chevron">${Icons.chevronDown}</span>
+              ${Icons.viewLayer}<span id="lbl-vl-name" data-no-i18n="true">ViewLayer</span><span class="pill-chevron">${Icons.chevronDown}</span>
             </button>
           </div>
         </header>
@@ -232,6 +239,9 @@ export class EditorApp {
       this.syncAll();
       this.scheduleAutoSave();
     });
+    this.unsubscribeLang = onLanguageChange(() => {
+      this.syncAll();
+    });
     this.syncAll();
   }
 
@@ -267,6 +277,7 @@ export class EditorApp {
       window.removeEventListener('keydown', this.keydownHandler);
       this.keydownHandler = undefined;
     }
+    this.unsubscribeLang?.();
     this.unsubscribeEngine?.();
     this.aiPanel.destroy();
     this.overlays.destroy();
@@ -344,9 +355,14 @@ export class EditorApp {
 
       items.push(
         {
-          label: 'Abrir Chat IA / Agente Multi-IA',
+          label: tr('Abrir Chat IA / Agente Multi-IA'),
           icon: Icons.sparkles,
           onClick: () => this.aiPanel.open()
+        },
+        {
+          label: tr('Selecionar Idioma'),
+          icon: Icons.hubGlobe,
+          onClick: () => openLanguageSelectorModal()
         },
         { separator: true },
         { sectionTitle: 'Arquivo & Importação Universal' },
@@ -876,7 +892,7 @@ export class EditorApp {
     }));
 
     return [
-      { sectionTitle: targetObj ? `Objeto: ${targetObj.name}` : 'Operações de Objeto' },
+      { sectionTitle: targetObj ? `Objeto: "${targetObj.name}"` : 'Operações de Objeto' },
       {
         label: 'Renomear...',
         icon: Icons.edit,
@@ -943,8 +959,20 @@ export class EditorApp {
           const res = this.engine.joinSelected();
           showToast(
             res
-              ? `Objetos unidos em "${res.name}"`
-              : 'Selecione 2 ou mais objetos Mesh no Explorer para unir.'
+              ? `"${res.name}"`
+              : tr('Unir Selecionados')
+          );
+        }
+      },
+      {
+        label: tr('Fundir em Mesh Suave'),
+        icon: Icons.toolSculptSmooth,
+        onClick: () => {
+          const fused = this.engine.fuseObjectsToSmoothMesh();
+          showToast(
+            fused
+              ? `"${fused.name}"`
+              : tr('Fundir em Mesh Suave')
           );
         }
       },
@@ -1151,7 +1179,7 @@ export class EditorApp {
             ${col.collapsed ? Icons.chevronRight : Icons.chevronDown}
           </button>
           ${Icons.collectionBox}
-          <span class="obj-label">${escapeHtml(col.name)}</span>
+          <span class="obj-label" data-no-i18n="true">${escapeHtml(col.name)}</span>
         </div>
         <div class="outliner-row-right">
           <button type="button" class="outliner-mini-btn" data-col-more title="Opções do Grupo">${Icons.moreDots}</button>
@@ -1175,7 +1203,7 @@ export class EditorApp {
       colRow.querySelector('[data-col-more]')?.addEventListener('click', (e) => {
         e.stopPropagation();
         openDropdownMenu(e.currentTarget as HTMLElement, [
-          { sectionTitle: `Grupo: ${col.name}` },
+          { sectionTitle: `Grupo: "${col.name}"` },
           {
             label: 'Selecionar Todos do Grupo',
             icon: Icons.check,
@@ -1260,7 +1288,7 @@ export class EditorApp {
           <div class="outliner-row-left">
             <span style="opacity:0.55;display:inline-flex;align-items:center;">${Icons.chevronRight}</span>
             ${objIcon}
-            <span class="obj-label">${escapeHtml(obj.name)}</span>
+            <span class="obj-label" data-no-i18n="true">${escapeHtml(obj.name)}</span>
             ${dataBadge}
           </div>
           <div class="outliner-row-right">
@@ -1630,6 +1658,7 @@ export class EditorApp {
     this.overlays.sync();
     this.propsPanel.sync();
     this.timelinePanel.sync();
+    refreshEntireDocumentLanguage();
   }
 }
 

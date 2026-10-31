@@ -71,7 +71,7 @@ export function openTextureStudioModal(
   card.innerHTML = `
     <div class="modix-modal-header">
       <span style="display:flex;align-items:center;gap:6px;">
-        ${Icons.palette}<span>Estúdio de Texturas 2D &amp; 3D — <b>${escapeHtml(active.name)}</b> (512x512 PNG)</span>
+        ${Icons.palette}<span>Estúdio de Texturas 2D / 3D</span> — <b data-no-i18n="true">${escapeHtml(active.name)}</b> <span data-no-i18n="true">(512x512 PNG)</span>
       </span>
       <div style="display:flex;gap:6px;align-items:center;">
         <button class="modix-btn-sm" data-act="paint3d" title="Pintar direto no modelo 3D">${Icons.brush}<span>Pintar em 3D</span></button>

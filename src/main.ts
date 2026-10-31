@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { StatusBar, Style } from '@capacitor/status-bar';
+import { installDomI18nObserver, refreshEntireDocumentLanguage } from './i18n/I18nService';
 import { getCurrentAccount, type ModixSavedProject, type ModixUserAccount } from './services/AccountProjectsService';
 import './styles/editor.css';
 import { EditorApp } from './ui/EditorApp';
@@ -37,6 +38,7 @@ async function bootstrap(): Promise<void> {
   const appEl = document.getElementById('app');
   if (!appEl) return;
 
+  installDomI18nObserver();
   void initNativeEnvironment();
 
   let activeEditor: EditorApp | null = null;
@@ -54,6 +56,7 @@ async function bootstrap(): Promise<void> {
       }
     });
     await hubScreen.mount(account);
+    refreshEntireDocumentLanguage();
   };
 
   const openEditorForProject = (project: ModixSavedProject, account: ModixUserAccount) => {
